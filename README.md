@@ -33,4 +33,3 @@ Tests with fuzzing
 ```sh
 ape test -s -m "fuzzing"
 ```
-# v1-lbp
