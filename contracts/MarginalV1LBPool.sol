@@ -152,7 +152,7 @@ contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
     ) external returns (uint256 shares, uint256 amount0, uint256 amount1) {
         if (msg.sender != supplier) revert Unauthorized();
         if (
-            sqrtPriceX96 != sqrtPriceLowerX96 ||
+            sqrtPriceX96 != sqrtPriceLowerX96 &&
             sqrtPriceX96 != sqrtPriceUpperX96
         ) revert RangeMath.InvalidSqrtPriceX96();
         if (block.timestamp < blockTimestampInitialize)
