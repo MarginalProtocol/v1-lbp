@@ -1,0 +1,56 @@
+name: v1-lbp
+
+plugins:
+  - name: alchemy
+    version: 0.6.3
+  - name: etherscan
+    version: 0.6.11
+  - name: solidity
+    version: 0.6.9
+  - name: foundry
+    version: 0.6.12
+  - name: arbitrum
+    version: 0.6.1
+  - name: base
+    version: 0.6.3
+
+default_ecosystem: ethereum
+
+ethereum:
+  default_network: local
+  local:
+    default_provider: foundry
+
+foundry:
+  base_fee: 10000000000000  # 10000 gwei
+  priority_fee: 1000000000  # 1 gwei
+  fork:
+    ethereum:
+      mainnet:
+        upstream_provider: alchemy
+
+dependencies:
+  - name: openzeppelin
+    github: OpenZeppelin/openzeppelin-contracts
+    version: 4.8.3
+  - name: uniswap-v3-core
+    github: Uniswap/v3-core
+    ref: 0.8
+  - name: uniswap-v3-periphery
+    github: Uniswap/v3-periphery
+    ref: 0.8
+  - name: marginal-v1-core
+    github: MarginalProtocol/v1-core
+    ref: v1.0.1
+  - name: marginal-v1-periphery
+    github: MarginalProtocol/v1-periphery
+    ref: v1.0.1
+
+solidity:
+  via_ir: true
+  import_remapping:
+    - "@openzeppelin/contracts=openzeppelin/v4.8.3"
+    - "@uniswap/v3-core/contracts=uniswap-v3-core/v0.8"
+    - "@uniswap/v3-periphery/contracts=uniswap-v3-periphery/v0.8"
+    - "@marginal/v1-core/contracts=marginal-v1-core/v1.0.1"
+    - "@marginal/v1-periphery/contracts=marginal-v1-periphery/v1.0.1"
