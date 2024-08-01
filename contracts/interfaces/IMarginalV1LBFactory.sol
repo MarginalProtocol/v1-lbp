@@ -35,6 +35,10 @@ interface IMarginalV1LBFactory {
     /// @return Whether address is a pool
     function isPool(address pool) external view returns (bool);
 
+    /// @notice Returns the protocol fee taken when pool finalized
+    /// @return The protocol fee
+    function feeProtocol() external view returns (uint8);
+
     /// @notice Creates a new Marginal v1 pool for the given unique pool key
     /// @dev tokenA and tokenB may be passed in either token0/token1 or token1/token0 order
     /// @param tokenA The address of either token0/token1
@@ -57,4 +61,19 @@ interface IMarginalV1LBFactory {
     /// @dev Can only be called by the current factory owner
     /// @param _owner The new owner of the factory
     function setOwner(address _owner) external;
+
+    /// @notice Sets the protocol fee charged when each pool is finalized
+    /// @dev Can only be called by the current factory owner
+    /// @param _feeProtocol The new protocol fee rate
+    function setFeeProtocol(uint8 _feeProtocol) external;
+
+    /// @notice Collects protocol fees accumulated in factory
+    /// @dev Can only be called by the current factory owner
+    /// @param token The token to collect fees in
+    /// @param recipient The recipient of collected fees
+    /// @return amount The amount of token fees collected
+    function collectProtocol(
+        address token,
+        address recipient
+    ) external returns (uint256 amount);
 }

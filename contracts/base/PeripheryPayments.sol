@@ -7,8 +7,12 @@ import {IWETH9} from "@uniswap/v3-periphery/contracts/interfaces/external/IWETH9
 import {TransferHelper} from "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 
 import {IPeripheryPayments} from "../interfaces/IPeripheryPayments.sol";
+import {PeripheryImmutableState} from "./PeripheryImmutableState.sol";
 
-abstract contract PeripheryPayments is IPeripheryPayments {
+abstract contract PeripheryPayments is
+    IPeripheryPayments,
+    PeripheryImmutableState
+{
     /// @dev Should override for periphery contracts used
     receive() external payable virtual {}
 

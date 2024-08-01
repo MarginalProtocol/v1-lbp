@@ -8,9 +8,20 @@ interface IMarginalV1LBReceiver {
     /// @return The address of the liquidity bootstrapping pool
     function pool() external view returns (address);
 
+    /// @notice The first of the two tokens of the pool, sorted by address
+    /// @return The address of the token0 contract
+    function token0() external view returns (address);
+
+    /// @notice The second of the two tokens of the pool, sorted by address
+    /// @return The address of the token1 contract
+    function token1() external view returns (address);
+
     /// @notice Notifies receiver of funds transferred in from liquidity bootstrapping pool
     /// @dev Must transfer funds from supplier to receiver prior to calling IMarginalV1LBReceiver#notifyRewardAmounts
     /// @param amount0 The amount of token0 sent from `msg.sender` to receiver
     /// @param amount1 The amount of token1 sent from `msg.sender` to receiver
-    function notifyRewardAmounts(uint256 amount0, uint256 amount1) external;
+    function notifyRewardAmounts(
+        uint256 amount0,
+        uint256 amount1
+    ) external virtual;
 }

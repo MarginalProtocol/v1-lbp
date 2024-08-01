@@ -2,6 +2,7 @@
 pragma solidity 0.8.17;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {TransferHelper} from "@marginal/v1-core/contracts/libraries/TransferHelper.sol";
 
 import {IMarginalV1LBFactory} from "./interfaces/IMarginalV1LBFactory.sol";
 import {IMarginalV1LBPoolDeployer} from "./interfaces/IMarginalV1LBPoolDeployer.sol";

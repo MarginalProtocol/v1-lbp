@@ -22,7 +22,7 @@ import {IMarginalV1LBFinalizeCallback} from "./interfaces/callback/IMarginalV1LB
 import {IMarginalV1LBFactory} from "./interfaces/IMarginalV1LBFactory.sol";
 import {IMarginalV1LBPool} from "./interfaces/IMarginalV1LBPool.sol";
 
-contract MarginalV1LBPool is IMarginalV1LBPool {
+contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
     /// @inheritdoc IMarginalV1LBPool
     address public immutable factory;
     /// @inheritdoc IMarginalV1LBPool
@@ -62,7 +62,7 @@ contract MarginalV1LBPool is IMarginalV1LBPool {
         uint8 feeProtocol;
         bool finalized;
     }
-    /// @inheritdoc IMarginalV1Pool
+    /// @inheritdoc IMarginalV1LBPool
     State public state;
 
     uint256 private unlocked = 1; // uses OZ convention of 1 for false and 2 for true
@@ -97,7 +97,7 @@ contract MarginalV1LBPool is IMarginalV1LBPool {
         uint256 amount1
     );
     event Burn(
-        address indexed sender,
+        address indexed owner,
         address recipient,
         uint128 liquidityDelta,
         uint256 amount0,
@@ -126,7 +126,7 @@ contract MarginalV1LBPool is IMarginalV1LBPool {
         int24 _tickUpper,
         address _supplier,
         uint256 _blockTimestampInitialize
-    ) {
+    ) ERC20("Marginal V1 Liquidity Bootstrapping LP Token", "MARGV1LB-LP") {
         factory = _factory;
         token0 = _token0;
         token1 = _token1;
@@ -164,7 +164,9 @@ contract MarginalV1LBPool is IMarginalV1LBPool {
             ? sqrtPriceUpperX96
             : sqrtPriceLowerX96;
 
+        int24 tick = TickMath.getTickAtSqrtRatio(sqrtPriceX96);
         uint8 feeProtocol = IMarginalV1LBFactory(factory).feeProtocol();
+
         state = State({
             sqrtPriceX96: sqrtPriceX96,
             totalPositions: 0,
@@ -187,7 +189,6 @@ contract MarginalV1LBPool is IMarginalV1LBPool {
         bytes calldata data
     )
         external
-        lock
         returns (
             uint128 liquidityDelta,
             uint160 sqrtPriceX96,
@@ -195,11 +196,16 @@ contract MarginalV1LBPool is IMarginalV1LBPool {
             uint256 amount1
         )
     {
+        // TODO: finalize automatically on final swap?
         if (msg.sender != supplier) revert Unauthorized();
         if (!state.finalized && !_canExit()) revert NotFinalized(); // allows override if past minimum duration
 
         // burn liquidity to supplier
-        (liquidityDelta, amount0, amount1) = burn(msg.sender, totalSupply());
+        (liquidityDelta, amount0, amount1) = burn(
+            address(this),
+            msg.sender,
+            totalSupply()
+        );
 
         // notify supplier of funds transferred on burn
         sqrtPriceX96 = state.sqrtPriceX96;
@@ -242,7 +248,7 @@ contract MarginalV1LBPool is IMarginalV1LBPool {
         return _state;
     }
 
-    /// @inheritdoc IMarginalV1Pool
+    /// @inheritdoc IMarginalV1LBPool
     function swap(
         address recipient,
         bool zeroForOne,
@@ -363,7 +369,7 @@ contract MarginalV1LBPool is IMarginalV1LBPool {
         address recipient,
         uint128 liquidityDelta,
         bytes calldata data
-    ) private returns (uint256 shares, uint256 amount0, uint256 amount1) {
+    ) private lock returns (uint256 shares, uint256 amount0, uint256 amount1) {
         uint256 _totalSupply = totalSupply();
         bool initializing = (_totalSupply == 0);
 
@@ -408,15 +414,19 @@ contract MarginalV1LBPool is IMarginalV1LBPool {
         // update pool state to latest
         state = _state;
 
+        _mint(recipient, shares);
+
         emit Mint(msg.sender, recipient, liquidityDelta, amount0, amount1);
     }
 
     /// @notice Removes liquidity from the pool range position with ticks (tickLower, tickUpper)
     function burn(
+        address owner,
         address recipient,
         uint256 shares
     )
         private
+        lock
         returns (uint128 liquidityDelta, uint256 amount0, uint256 amount1)
     {
         State memory _state = stateSynced();
@@ -460,6 +470,8 @@ contract MarginalV1LBPool is IMarginalV1LBPool {
         // update pool state to latest
         state = _state;
 
-        emit Burn(msg.sender, recipient, liquidityDelta, amount0, amount1);
+        _burn(owner, shares);
+
+        emit Burn(owner, recipient, liquidityDelta, amount0, amount1);
     }
 }

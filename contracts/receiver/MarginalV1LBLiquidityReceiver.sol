@@ -1,15 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0
-pragma solidity 0.8.17;
+pragma solidity =0.8.15;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
+import {TickMath} from "@uniswap/v3-core/contracts/libraries/TickMath.sol";
 import {IUniswapV3Factory} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
 import {IUniswapV3Pool} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
+
 import {INonfungiblePositionManager as IUniswapV3NonfungiblePositionManager} from "@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol";
+import {Multicall} from "@uniswap/v3-periphery/contracts/base/Multicall.sol";
 
 import {LiquidityMath} from "@marginal/v1-core/contracts/libraries/LiquidityMath.sol";
 import {IMarginalV1Factory} from "@marginal/v1-core/contracts/interfaces/IMarginalV1Factory.sol";
+import {IMarginalV1Pool} from "@marginal/v1-core/contracts/interfaces/IMarginalV1Pool.sol";
 
 import {LiquidityAmounts} from "@marginal/v1-periphery/contracts/libraries/LiquidityAmounts.sol";
 import {PoolConstants} from "@marginal/v1-periphery/contracts/libraries/PoolConstants.sol";
@@ -23,13 +27,16 @@ import {PeripheryPayments} from "../base/PeripheryPayments.sol";
 import {IMarginalV1LBFactory} from "../interfaces/IMarginalV1LBFactory.sol";
 import {IMarginalV1LBPool} from "../interfaces/IMarginalV1LBPool.sol";
 
-import {IMarginalV1LBLiquidityReceiverDeployer} from "../interfaces/IMarginalV1LBLiquidityReceiverDeployer.sol";
-import {IMarginalV1LBLiquidityReceiver} from "../interfaces/IMarginalV1LBLiquidityReceiver.sol";
+import {IMarginalV1LBReceiver} from "../interfaces/receiver/IMarginalV1LBReceiver.sol";
+import {IMarginalV1LBLiquidityReceiverDeployer} from "../interfaces/receiver/liquidity/IMarginalV1LBLiquidityReceiverDeployer.sol";
+import {IMarginalV1LBLiquidityReceiver} from "../interfaces/receiver/liquidity/IMarginalV1LBLiquidityReceiver.sol";
+
+import {MarginalV1LBReceiver} from "./MarginalV1LBReceiver.sol";
 
 /// @dev Does not support non-standard ERC20 transfer behavior
 contract MarginalV1LBLiquidityReceiver is
     IMarginalV1LBLiquidityReceiver,
-    IMarginalV1LBReceiver,
+    MarginalV1LBReceiver,
     PeripheryImmutableState,
     PeripheryPools,
     PeripheryPayments,
@@ -39,15 +46,6 @@ contract MarginalV1LBLiquidityReceiver is
 
     /// @inheritdoc IMarginalV1LBLiquidityReceiver
     address public immutable deployer;
-
-    /// @inheritdoc IMarginalV1LBLiquidityReceiver
-    address public immutable pool;
-
-    /// @dev Address of token0 fetched from pool
-    address internal immutable token0;
-
-    /// @dev Address of token1 fetched from pool
-    address internal immutable token1;
 
     /// @inheritdoc IMarginalV1LBLiquidityReceiver
     uint256 public reserve0;
@@ -84,10 +82,10 @@ contract MarginalV1LBLiquidityReceiver is
         /// shares (if any) of pool added liquidity for fungible liquidity
         uint256 shares;
     }
-    /// @inheritdoc IMarginalV1LBLiquidityRecipient
+    /// @inheritdoc IMarginalV1LBLiquidityReceiver
     PoolInfo public uniswapV3PoolInfo;
 
-    /// @inheritdoc IMarginalV1LBLiquidityRecipient
+    /// @inheritdoc IMarginalV1LBLiquidityReceiver
     PoolInfo public marginalV1PoolInfo;
 
     error Unauthorized();
@@ -99,27 +97,32 @@ contract MarginalV1LBLiquidityReceiver is
     error InvalidPool();
     error InvalidUniswapV3Fee();
     error InvalidMarginalV1Maintenance();
+    error Amount0LessThanMin();
+    error Amount1LessThanMin();
     error LiquidityAdded();
     error LiquidityNotAdded();
 
-    constructor(address _pool, bytes calldata data) {
+    constructor(
+        address _factory,
+        address _marginalV1Factory,
+        address _WETH9,
+        address _pool,
+        bytes memory data
+    )
+        PeripheryImmutableState(_factory, _marginalV1Factory, _WETH9)
+        MarginalV1LBReceiver(_pool)
+    {
         deployer = msg.sender;
-        pool = _pool;
-        token0 = IMarginalV1LBPool(_pool).token0();
-        token1 = IMarginalV1LBPool(_pool).token1();
 
         ReceiverParams memory params = abi.decode(data, (ReceiverParams));
         checkParams(params);
         receiverParams = params;
     }
 
-    // TODO: receive just in case?
-    // receive() external payable virtual override {}
-
     /// @notice Checks whether Uniswap v3 and Marginal v1 params are valid
     /// @dev Reverts if params not valid
     function checkParams(ReceiverParams memory params) public {
-        if (params.treasuryRatio > 1e6 || params.uniswapRatio > 1e6)
+        if (params.treasuryRatio > 1e6 || params.uniswapV3Ratio > 1e6)
             revert InvalidRatio();
         fullTickRange(params.uniswapV3Fee);
         maximumLeverage(params.marginalV1Maintenance);
@@ -145,7 +148,9 @@ contract MarginalV1LBLiquidityReceiver is
     function maximumLeverage(
         uint24 maintenance
     ) private view returns (uint256) {
-        uint256 lev = IMarginalV1Factory(marginalV1Factory).getLeverage();
+        uint256 lev = IMarginalV1Factory(marginalV1Factory).getLeverage(
+            maintenance
+        );
         if (lev == 0) revert InvalidMarginalV1Maintenance();
         return lev;
     }
@@ -171,7 +176,10 @@ contract MarginalV1LBLiquidityReceiver is
     }
 
     /// @inheritdoc IMarginalV1LBReceiver
-    function notifyRewardAmounts(uint256 amount0, uint256 amount1) external {
+    function notifyRewardAmounts(
+        uint256 amount0,
+        uint256 amount1
+    ) external virtual override(MarginalV1LBReceiver, IMarginalV1LBReceiver) {
         address supplier = IMarginalV1LBPool(pool).supplier();
         if (msg.sender != supplier) revert Unauthorized();
 
@@ -197,19 +205,9 @@ contract MarginalV1LBLiquidityReceiver is
         reserve1 = amount1;
 
         if (amount0Treasury > 0)
-            pay(
-                poolKey.token0,
-                address(this),
-                params.treasuryAddress,
-                amount0Treasury
-            );
+            pay(token0, address(this), params.treasuryAddress, amount0Treasury);
         if (amount1Treasury > 0)
-            pay(
-                poolKey.token1,
-                address(this),
-                params.treasuryAddress,
-                amount1Treasury
-            );
+            pay(token1, address(this), params.treasuryAddress, amount1Treasury);
     }
 
     /// @notice Returns the amounts desired for amounts{0,1} from reserves
@@ -234,7 +232,7 @@ contract MarginalV1LBLiquidityReceiver is
         );
     }
 
-    /// @inheritdoc IMarginalV1LBLiquidityRecipient
+    /// @inheritdoc IMarginalV1LBLiquidityReceiver
     function mintUniswapV3()
         external
         payable
@@ -272,8 +270,11 @@ contract MarginalV1LBLiquidityReceiver is
                 sqrtPriceX96
             );
 
+        // TODO: think through edge of users initializing uniswap pool with some liquidity prior
+        // TODO: should we swap to lbp price?
+
         // reset sqrt price to Uniswap v3 pool
-        (sqrtPriceX96, , , , , , ) = IUniswapV3Pool(uniswapV3Pool);
+        (sqrtPriceX96, , , , , , ) = IUniswapV3Pool(uniswapV3Pool).slot0();
 
         uint256 amount0UniswapV3 = (_reserve0 * params.uniswapV3Ratio) / 1e6;
         uint256 amount1UniswapV3 = (_reserve1 * params.uniswapV3Ratio) / 1e6;
@@ -348,7 +349,7 @@ contract MarginalV1LBLiquidityReceiver is
         });
     }
 
-    /// @inheritdoc IMarginalV1LBLiquidityRecipient
+    /// @inheritdoc IMarginalV1LBLiquidityReceiver
     function mintMarginalV1()
         external
         payable
@@ -374,10 +375,7 @@ contract MarginalV1LBLiquidityReceiver is
         reserve0 = 0;
         reserve1 = 0;
 
-        address marginalV1Factory = IMarginalV1LBLiquidityReceiverDeployer(
-            deployer
-        ).marginalV1Factory();
-        marginalV1Pool = IMarginalV1Factory(marginalV1Factory).getPool(
+        marginalV1Pool = getMarginalV1Pool(
             token0,
             token1,
             params.marginalV1Maintenance,
@@ -387,7 +385,8 @@ contract MarginalV1LBLiquidityReceiver is
         uint160 sqrtPriceX96;
         bool initialize = (marginalV1Pool == address(0));
         if (!initialize) {
-            (sqrtPriceX96, , , , , , , ) = IMarginalV1Pool(pool).state();
+            (sqrtPriceX96, , , , , , , ) = IMarginalV1Pool(marginalV1Pool)
+                .state();
             if (sqrtPriceX96 == 0) {
                 initialize = true;
                 // use uniswap v3 sqrt price instead
@@ -449,7 +448,7 @@ contract MarginalV1LBLiquidityReceiver is
                         token0: token0,
                         token1: token1,
                         maintenance: params.marginalV1Maintenance,
-                        oracle: uniswapV3Pool,
+                        uniswapV3Fee: params.uniswapV3Fee,
                         recipient: address(this),
                         sqrtPriceX96: sqrtPriceX96,
                         sqrtPriceLimitX96: 0,
@@ -498,7 +497,7 @@ contract MarginalV1LBLiquidityReceiver is
                     })
                 );
 
-            marginalV1Pool = IMarginalV1Factory(marginalV1Factory).getPool(
+            marginalV1Pool = getMarginalV1Pool(
                 token0,
                 token1,
                 params.marginalV1Maintenance,
@@ -514,7 +513,7 @@ contract MarginalV1LBLiquidityReceiver is
         });
     }
 
-    /// @inheritdoc IMarginalV1LBLiquidityRecipient
+    /// @inheritdoc IMarginalV1LBLiquidityReceiver
     function freeUniswapV3(address recipient) external {
         PoolInfo memory info = uniswapV3PoolInfo;
         if (info.poolAddress == address(0)) revert LiquidityNotAdded();
@@ -528,13 +527,18 @@ contract MarginalV1LBLiquidityReceiver is
         info.blockTimestamp = 0;
         uniswapV3PoolInfo = info;
 
+        // get Uniswap v3 NFT position manager from deployer
+        address uniswapV3NonfungiblePositionManager = IMarginalV1LBLiquidityReceiverDeployer(
+                deployer
+            ).uniswapV3NonfungiblePositionManager();
+
         // @dev not safeTransferFrom so no ERC721 received needed on recipient
         IUniswapV3NonfungiblePositionManager(
             uniswapV3NonfungiblePositionManager
         ).transferFrom(address(this), recipient, info.tokenId);
     }
 
-    /// @inheritdoc IMarginalV1LBLiquidityRecipient
+    /// @inheritdoc IMarginalV1LBLiquidityReceiver
     function freeMarginalV1(address recipient) external {
         PoolInfo memory info = marginalV1PoolInfo;
         if (info.poolAddress == address(0)) revert LiquidityNotAdded();

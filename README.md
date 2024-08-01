@@ -10,10 +10,10 @@ Uniswap v3 range position in a single pool with fixed upper and lower ticks set 
 
 The Marginal v1 liquidity bootstrapping pool starts at one end of the tick range with supplier providing tokens
 in only one type of token (e.g. all in `token0` if start at `tickLower`). Buyers bid by swapping through the pool
-for supplied token in exchange for token supplier is looking to acquire funds in.
+for supplied token in exchange for token acquiring funds in.
 
 Once price reaches the upper tick, the pool will contain only the acquired funds token. These funds are sent
-back to the original supplier who may use them coupled with more token to seed full range liquidity pools.
+back to the original supplier who may use them coupled with more token to seed liquidity pools.
 
 ## Installation
 

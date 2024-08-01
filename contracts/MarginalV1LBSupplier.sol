@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0
-pragma solidity 0.8.17;
+pragma solidity =0.8.15;
 
 import {TickMath} from "@uniswap/v3-core/contracts/libraries/TickMath.sol";
+import {LiquidityAmounts} from "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
 import {PeripheryValidation} from "@uniswap/v3-periphery/contracts/base/PeripheryValidation.sol";
 import {Multicall} from "@uniswap/v3-periphery/contracts/base/Multicall.sol";
 
@@ -9,12 +10,16 @@ import {IMarginalV1MintCallback} from "@marginal/v1-core/contracts/interfaces/ca
 
 import {CallbackValidation} from "./libraries/CallbackValidation.sol";
 import {PoolAddress} from "./libraries/PoolAddress.sol";
+import {RangeMath} from "./libraries/RangeMath.sol";
 import {PeripheryImmutableState} from "./base/PeripheryImmutableState.sol";
 import {PeripheryPayments} from "./base/PeripheryPayments.sol";
 
 import {IMarginalV1LBFinalizeCallback} from "./interfaces/callback/IMarginalV1LBFinalizeCallback.sol";
 import {IMarginalV1LBReceiverDeployer} from "./interfaces/receiver/IMarginalV1LBReceiverDeployer.sol";
+
 import {IMarginalV1LBReceiver} from "./interfaces/receiver/IMarginalV1LBReceiver.sol";
+import {IMarginalV1LBPool} from "./interfaces/IMarginalV1LBPool.sol";
+import {IMarginalV1LBFactory} from "./interfaces/IMarginalV1LBFactory.sol";
 import {IMarginalV1LBSupplier} from "./interfaces/IMarginalV1LBSupplier.sol";
 
 contract MarginalV1LBSupplier is
@@ -54,12 +59,22 @@ contract MarginalV1LBSupplier is
         int24 tickLower,
         int24 tickUpper,
         uint256 blockTimestampInitialize
-    ) private view returns (PoolAddress.PoolKey) {
-        return PoolAddress.getPoolKey(tokenA, tokenB, tickLower, tickUpper, address(this), blockTimestampInitialize);
+    ) private view returns (PoolAddress.PoolKey memory) {
+        return
+            PoolAddress.getPoolKey(
+                tokenA,
+                tokenB,
+                tickLower,
+                tickUpper,
+                address(this),
+                blockTimestampInitialize
+            );
     }
 
     /// @dev Returns the pool for the given unique pool key. The pool contract may or may not exist.
-    function getPoolAddress(PoolAddress.PoolKey) private view returns (address) {
+    function getPoolAddress(
+        PoolAddress.PoolKey memory poolKey
+    ) private view returns (address) {
         return PoolAddress.getAddress(factory, poolKey);
     }
 
@@ -70,9 +85,21 @@ contract MarginalV1LBSupplier is
         external
         payable
         checkDeadline(params.deadline)
-        returns (address pool, address receiver, uint256 shares, uint256 amount0, uint256 amount1)
+        returns (
+            address pool,
+            address receiver,
+            uint256 shares,
+            uint256 amount0,
+            uint256 amount1
+        )
     {
-        PoolAddress.PoolKey poolKey = getPoolKey(params.tokenA, params.tokenB, params.tickLower, params.tickUpper, params.blockTimestampInitialize);
+        PoolAddress.PoolKey memory poolKey = getPoolKey(
+            params.tokenA,
+            params.tokenB,
+            params.tickLower,
+            params.tickUpper,
+            params.blockTimestampInitialize
+        );
         pool = getPoolAddress(poolKey);
         receiver = receivers[pool];
 
@@ -89,38 +116,41 @@ contract MarginalV1LBSupplier is
 
             if (params.receiverDeployer == address(0)) revert InvalidReceiver();
             // @dev should revert if data not valid
-            receiver = IMarginalV1LBReceiverDeployer(params.receiverDeployer).deploy(pool, params.receiverData);
+            receiver = IMarginalV1LBReceiverDeployer(params.receiverDeployer)
+                .deploy(pool, params.receiverData);
             receivers[pool] = receiver;
         }
 
         // initialize pool if not initialized yet
-        (uint160 sqrtPriceX96,,,,,,,) = IMarginalV1Pool(pool).state();
+        (uint160 sqrtPriceX96, , , , , , , ) = IMarginalV1LBPool(pool).state();
         if (sqrtPriceX96 == 0) {
             sqrtPriceX96 = TickMath.getSqrtRatioAtTick(params.tick);
-            uint160 sqrtPriceLowerX96 = IMarginalV1LBPool(pool).sqrtPriceLowerX96();
-            uint160 sqrtPriceUpperX96 = IMarginalV1LBPool(pool).sqrtPriceUpperX96();
+            uint160 sqrtPriceLowerX96 = IMarginalV1LBPool(pool)
+                .sqrtPriceLowerX96();
+            uint160 sqrtPriceUpperX96 = IMarginalV1LBPool(pool)
+                .sqrtPriceUpperX96();
 
             // calculate liquidity using range math
-            (uint128 liquidity,) = RangeMath.toLiquiditySqrtPriceX96(
-                sqrtPriceX96 == sqrtPriceLowerX96 ? params.amountDesired : 0, // reserve0
-                sqrtPriceX96 == sqrtPriceLowerX96 ? 0 : params.amountDesired, // reserve1
+            uint128 liquidity = LiquidityAmounts.getLiquidityForAmounts(
+                sqrtPriceX96,
                 sqrtPriceLowerX96,
-                sqrtPriceUpperX96
+                sqrtPriceUpperX96,
+                sqrtPriceX96 == sqrtPriceLowerX96 ? params.amountDesired : 0, // reserve0
+                sqrtPriceX96 == sqrtPriceLowerX96 ? 0 : params.amountDesired // reserve1
             );
 
             (shares, amount0, amount1) = IMarginalV1LBPool(pool).initialize(
                 liquidity,
                 sqrtPriceX96,
                 abi.encode(
-                    MintCallbackData({
-                        poolKey: poolKey,
-                        payer: msg.sender
-                    })
+                    MintCallbackData({poolKey: poolKey, payer: msg.sender})
                 )
             );
 
-            uint256 amount = sqrtPriceX96 == sqrtPriceLowerX96 ? amount0 : amount1;
-            if (amount < amountMin) revert AmountLessThanMin(amount);
+            uint256 amount = sqrtPriceX96 == sqrtPriceLowerX96
+                ? amount0
+                : amount1;
+            if (amount < params.amountMin) revert AmountLessThanMin(amount);
         }
     }
 
@@ -131,8 +161,8 @@ contract MarginalV1LBSupplier is
 
     /// @inheritdoc IMarginalV1MintCallback
     function marginalV1MintCallback(
-        int256 amount0Owed,
-        int256 amount1Owed,
+        uint256 amount0Owed,
+        uint256 amount1Owed,
         bytes calldata data
     ) external {
         MintCallbackData memory decoded = abi.decode(data, (MintCallbackData));
@@ -147,8 +177,22 @@ contract MarginalV1LBSupplier is
     /// @inheritdoc IMarginalV1LBSupplier
     function finalizePool(
         FinalizeParams calldata params
-    ) external returns (uint128 liquidityDelta, uint160 sqrtPriceX96, uint256 amount0, uint256 amount1) {
-        PoolAddress.PoolKey poolKey = getPoolKey(params.tokenA, params.tokenB, params.tickLower, params.tickUpper, params.blockTimestampInitialize);
+    )
+        external
+        returns (
+            uint128 liquidityDelta,
+            uint160 sqrtPriceX96,
+            uint256 amount0,
+            uint256 amount1
+        )
+    {
+        PoolAddress.PoolKey memory poolKey = getPoolKey(
+            params.tokenA,
+            params.tokenB,
+            params.tickLower,
+            params.tickUpper,
+            params.blockTimestampInitialize
+        );
         address pool = getPoolAddress(poolKey);
         if (pool == address(0)) revert InvalidPool();
 
@@ -159,14 +203,13 @@ contract MarginalV1LBSupplier is
         balance0Cached = balance(poolKey.token0);
         balance1Cached = balance(poolKey.token1);
 
-        (liquidityDelta, sqrtPriceX96, amount0, amount1) = IMarginalV1LBPool(pool).finalize(
-            abi.encode(
-                FinalizeCallbackData({
-                    poolKey: poolKey,
-                    receiver: receiver
-                })
-            )
-        );        
+        (liquidityDelta, sqrtPriceX96, amount0, amount1) = IMarginalV1LBPool(
+            pool
+        ).finalize(
+                abi.encode(
+                    FinalizeCallbackData({poolKey: poolKey, receiver: receiver})
+                )
+            );
     }
 
     struct FinalizeCallbackData {
@@ -180,15 +223,36 @@ contract MarginalV1LBSupplier is
         uint256 amount1Transferred,
         bytes calldata data
     ) external {
-        FinalizeCallbackData memory decoded = abi.decode(data, (FinalizeCallbackData));
+        FinalizeCallbackData memory decoded = abi.decode(
+            data,
+            (FinalizeCallbackData)
+        );
         CallbackValidation.verifyCallback(factory, decoded.poolKey);
 
         // only support tokens with standard ERC20 transfer
-        if (balance0Cached + amount0Transferred > balance(decoded.poolKey.token0)) revert Amount0LessThanMin();
-        if (balance1Cached + amount1Transferred > balance(decoded.poolKey.token1)) revert Amount1LessThanMin();
+        if (
+            balance0Cached + amount0Transferred >
+            balance(decoded.poolKey.token0)
+        ) revert Amount0LessThanMin();
+        if (
+            balance1Cached + amount1Transferred >
+            balance(decoded.poolKey.token1)
+        ) revert Amount1LessThanMin();
 
-        if (amount0Transferred > 0) pay(decoded.poolKey.token0, address(this), decoded.receiver, amount0Transferred);
-        if (amount1Transferred > 0) pay(decoded.poolKey.token1, address(this), decoded.receiver, amount1Transferred);
+        if (amount0Transferred > 0)
+            pay(
+                decoded.poolKey.token0,
+                address(this),
+                decoded.receiver,
+                amount0Transferred
+            );
+        if (amount1Transferred > 0)
+            pay(
+                decoded.poolKey.token1,
+                address(this),
+                decoded.receiver,
+                amount1Transferred
+            );
 
         IMarginalV1LBReceiver(decoded.receiver).notifyRewardAmounts(
             amount0Transferred,
@@ -197,6 +261,6 @@ contract MarginalV1LBSupplier is
 
         // reset balances cached
         balance0Cached = DEFAULT_BALANCE_CACHED;
-        balance1Cached = DEFAULT_BALANCE_CACHED:
+        balance1Cached = DEFAULT_BALANCE_CACHED;
     }
 }

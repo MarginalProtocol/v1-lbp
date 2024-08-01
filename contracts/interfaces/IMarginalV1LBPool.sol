@@ -17,6 +17,14 @@ interface IMarginalV1LBPool {
     /// @return The address of the token1 contract
     function token1() external view returns (address);
 
+    /// @notice The lower tick limit of the liquidity bootstrapping pool range position
+    /// @return The lower tick limit of the range position
+    function tickLower() external view returns (int24);
+
+    /// @notice The upper tick limit of the liquidity bootstrapping pool range position
+    /// @return The upper tick limit of the range position
+    function tickUpper() external view returns (int24);
+
     /// @notice The lower price limit of the liquidity bootstrapping pool range position
     /// @return The lower price of the range position as a sqrt(token1/token0) Q64.96 value
     function sqrtPriceLowerX96() external view returns (uint160);
