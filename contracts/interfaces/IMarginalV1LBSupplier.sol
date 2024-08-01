@@ -14,6 +14,7 @@ interface IMarginalV1LBSupplier {
         address tokenB;
         int24 tickLower;
         int24 tickUpper;
+        uint256 blockTimestampInitialize;
         int24 tick;
         uint256 amountDesired;
         uint256 amountMin;
@@ -47,6 +48,7 @@ interface IMarginalV1LBSupplier {
         address tokenB;
         int24 tickLower;
         int24 tickUpper;
+        uint256 blockTimestampInitialize;
     }
 
     /// @notice Finalizes an existing liquidity bootstrapping pool, then forwards received funds to recipient stored on initialization

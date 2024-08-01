@@ -47,14 +47,15 @@ contract MarginalV1LBSupplier is
         address _WETH9
     ) PeripheryImmutableState(_factory, _marginalV1Factory, _WETH9) {}
 
-    /// @dev Returns the pool key for the given unique (token0, token1, tickLower, tickUpper) tuple.
+    /// @dev Returns the pool key for the given unique (token0, token1, tickLower, tickUpper, supplier, blockTimestampInitialize) tuple.
     function getPoolKey(
         address tokenA,
         address tokenB,
         int24 tickLower,
-        int24 tickUpper
+        int24 tickUpper,
+        uint256 blockTimestampInitialize
     ) private view returns (PoolAddress.PoolKey) {
-        return PoolAddress.getPoolKey(tokenA, tokenB, tickLower, tickUpper, address(this));
+        return PoolAddress.getPoolKey(tokenA, tokenB, tickLower, tickUpper, address(this), blockTimestampInitialize);
     }
 
     /// @dev Returns the pool for the given unique pool key. The pool contract may or may not exist.
@@ -71,7 +72,7 @@ contract MarginalV1LBSupplier is
         checkDeadline(params.deadline)
         returns (address pool, address receiver, uint256 shares, uint256 amount0, uint256 amount1)
     {
-        PoolAddress.PoolKey poolKey = getPoolKey(params.tokenA, params.tokenB, params.tickLower, params.tickUpper);
+        PoolAddress.PoolKey poolKey = getPoolKey(params.tokenA, params.tokenB, params.tickLower, params.tickUpper, params.blockTimestampInitialize);
         pool = getPoolAddress(poolKey);
         receiver = receivers[pool];
 
@@ -83,7 +84,7 @@ contract MarginalV1LBSupplier is
                 params.tickLower,
                 params.tickUpper,
                 address(this),
-                block.timestamp
+                block.timestamp // if not yet created, use current block timestamp
             );
 
             if (params.receiverDeployer == address(0)) revert InvalidReceiver();
@@ -147,7 +148,7 @@ contract MarginalV1LBSupplier is
     function finalizePool(
         FinalizeParams calldata params
     ) external returns (uint128 liquidityDelta, uint160 sqrtPriceX96, uint256 amount0, uint256 amount1) {
-        PoolAddress.PoolKey poolKey = getPoolKey(params.tokenA, params.tokenB, params.tickLower, params.tickUpper);
+        PoolAddress.PoolKey poolKey = getPoolKey(params.tokenA, params.tokenB, params.tickLower, params.tickUpper, params.blockTimestampInitialize);
         address pool = getPoolAddress(poolKey);
         if (pool == address(0)) revert InvalidPool();
 
