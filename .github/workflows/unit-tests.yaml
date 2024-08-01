@@ -1,0 +1,40 @@
+name: Unit Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out github repository
+      - uses: actions/checkout@v3
+
+      - name: Set up python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install python dependencies
+        run: pip install -r requirements.txt
+      
+      - name: Install ape plugins
+        run: ape plugins install .
+
+      - name: Compile contracts
+        run: ape compile --force --size
+
+      - name: Output current installation
+        run: pip freeze
+
+      - name: Install foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Run tests
+        run: ape test -s -m "not fuzzing" --cache-clear
+        timeout-minutes: 15

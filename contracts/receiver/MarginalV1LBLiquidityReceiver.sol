@@ -6,7 +6,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 
 import {IUniswapV3Factory} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
 import {IUniswapV3Pool} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
-import {INonfungiblePositionManager as IUniswapV3NonfungiblePositionManager} from "@uniswap/v3-core/contracts/interfaces/INonfungiblePositionManager.sol";
+import {INonfungiblePositionManager as IUniswapV3NonfungiblePositionManager} from "@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol";
 
 import {LiquidityMath} from "@marginal/v1-core/contracts/libraries/LiquidityMath.sol";
 import {IMarginalV1Factory} from "@marginal/v1-core/contracts/interfaces/IMarginalV1Factory.sol";
@@ -20,7 +20,6 @@ import {PeripheryImmutableState} from "../base/PeripheryImmutableState.sol";
 import {PeripheryPools} from "../base/PeripheryPools.sol";
 import {PeripheryPayments} from "../base/PeripheryPayments.sol";
 
-import {IMarginalV1LBFinalizeCallback} from "../interfaces/handler/IMarginalV1LBFinalizeCallback.sol";
 import {IMarginalV1LBFactory} from "../interfaces/IMarginalV1LBFactory.sol";
 import {IMarginalV1LBPool} from "../interfaces/IMarginalV1LBPool.sol";
 
