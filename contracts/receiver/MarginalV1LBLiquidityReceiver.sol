@@ -211,9 +211,12 @@ contract MarginalV1LBLiquidityReceiver is
     }
 
     /// @notice Returns the amounts desired for amounts{0,1} from reserves
+    /// @dev Uses max of liquidity values calculated from amounts{0,1} given reserves from lbp range position
     /// @param sqrtPriceX96 The price of the pool as a sqrt(token1/token0) Q64.96 value
     /// @param amount0 The amount of token0 to use from reserve
     /// @param amount1 The amount of token1 to use from reserve
+    /// @return amount0Desired The maximum amount of token0 needed to mint full range liquidity
+    /// @return amount1Desired The maximum amount of token1 needed to mint full range liquidity
     function getAmountsDesired(
         uint160 sqrtPriceX96,
         uint256 amount0,
@@ -249,8 +252,8 @@ contract MarginalV1LBLiquidityReceiver is
         (uint256 _reserve0, uint256 _reserve1) = (reserve0, reserve1);
         if (_reserve0 == 0 && _reserve1 == 0) revert InvalidReserves();
 
-        if (uniswapV3PoolInfo.poolAddress != address(0))
-            revert LiquidityAdded();
+        if (uniswapV3PoolInfo.blockTimestamp > 0) revert LiquidityAdded();
+        uniswapV3PoolInfo.blockTimestamp = _blockTimestamp(); // store here first to avoid re-entrancy issues
 
         // get Uniswap v3 NFT position manager from deployer
         address uniswapV3NonfungiblePositionManager = IMarginalV1LBLiquidityReceiverDeployer(
@@ -270,12 +273,6 @@ contract MarginalV1LBLiquidityReceiver is
                 sqrtPriceX96
             );
 
-        // TODO: think through edge of users initializing uniswap pool with some liquidity prior
-        // TODO: should we swap to lbp price?
-
-        // reset sqrt price to Uniswap v3 pool
-        (sqrtPriceX96, , , , , , ) = IUniswapV3Pool(uniswapV3Pool).slot0();
-
         uint256 amount0UniswapV3 = (_reserve0 * params.uniswapV3Ratio) / 1e6;
         uint256 amount1UniswapV3 = (_reserve1 * params.uniswapV3Ratio) / 1e6;
 
@@ -284,6 +281,7 @@ contract MarginalV1LBLiquidityReceiver is
         reserve1 -= amount1UniswapV3;
 
         // transfer in diff from sender between reserves dedicated to Uniswap v3 and amounts for mint
+        // @dev lbp price used for amounts desired as max of each token{0,1} could send to pool
         (uint256 amount0Desired, uint256 amount1Desired) = getAmountsDesired(
             sqrtPriceX96,
             amount0UniswapV3,
@@ -308,7 +306,6 @@ contract MarginalV1LBLiquidityReceiver is
         (int24 tickLower, int24 tickUpper) = fullTickRange(params.uniswapV3Fee);
 
         // add liquidity based on lbp price to avoid slippage issues
-        // @dev should be ok if amounts changed from unexpected token transfers in between handler calls
         IERC20(token0).safeIncreaseAllowance(
             uniswapV3NonfungiblePositionManager,
             amount0Desired
@@ -341,6 +338,22 @@ contract MarginalV1LBLiquidityReceiver is
                 })
             );
 
+        // refund any left over unused amounts in mint due to difference in lbp price and uniswap v3 price
+        if (amount0Desired > amount0)
+            pay(
+                token0,
+                address(this),
+                params.treasuryAddress,
+                amount0Desired - amount0
+            );
+        if (amount1Desired > amount1)
+            pay(
+                token1,
+                address(this),
+                params.treasuryAddress,
+                amount1Desired - amount1
+            );
+
         uniswapV3PoolInfo = PoolInfo({
             blockTimestamp: _blockTimestamp(),
             poolAddress: uniswapV3Pool,
@@ -368,8 +381,9 @@ contract MarginalV1LBLiquidityReceiver is
 
         address uniswapV3Pool = uniswapV3PoolInfo.poolAddress;
         if (uniswapV3Pool == address(0)) revert LiquidityNotAdded();
-        if (marginalV1PoolInfo.poolAddress != address(0))
-            revert LiquidityAdded();
+
+        if (marginalV1PoolInfo.blockTimestamp > 0) revert LiquidityAdded();
+        marginalV1PoolInfo.blockTimestamp = _blockTimestamp(); // store here first to avoid re-entrancy issues
 
         // set reserves to zero
         reserve0 = 0;
@@ -382,20 +396,16 @@ contract MarginalV1LBLiquidityReceiver is
             uniswapV3Pool
         );
 
-        uint160 sqrtPriceX96;
         bool initialize = (marginalV1Pool == address(0));
         if (!initialize) {
-            (sqrtPriceX96, , , , , , , ) = IMarginalV1Pool(marginalV1Pool)
+            (, , , , , , , bool initialized) = IMarginalV1Pool(marginalV1Pool)
                 .state();
-            if (sqrtPriceX96 == 0) {
-                initialize = true;
-                // use uniswap v3 sqrt price instead
-                (sqrtPriceX96, , , , , , ) = IUniswapV3Pool(uniswapV3Pool)
-                    .slot0();
-            }
+            initialize = !initialized;
         }
 
         // transfer in diff from sender between reserves dedicated to Marginal v1 and amounts for mint
+        // @dev lbp price used for amounts desired as max of each token{0,1} could send to pool
+        (uint160 sqrtPriceX96, , , , , , , ) = IMarginalV1LBPool(pool).state();
         (uint256 amount0Desired, uint256 amount1Desired) = getAmountsDesired(
             sqrtPriceX96,
             _reserve0,
@@ -421,7 +431,11 @@ contract MarginalV1LBLiquidityReceiver is
                 amount1Desired
             );
 
-            // calculate (roughly) amounts{0,1} desired accounting for liquidity burn plus swap
+            // initialize to uniswap v3 sqrt price
+            // @dev use uniswap v3 sqrt price to adjust desired amounts for burn via liquidity calculations
+            (sqrtPriceX96, , , , , , ) = IUniswapV3Pool(uniswapV3Pool).slot0();
+
+            // liquidity (roughly) contributed to marginal v1 pool ignoring burn
             uint128 liquidityDesired = LiquidityAmounts.getLiquidityForAmounts(
                 sqrtPriceX96,
                 amount0Desired,
@@ -430,6 +444,7 @@ contract MarginalV1LBLiquidityReceiver is
             uint128 liquidityBurned = PoolConstants.MINIMUM_LIQUIDITY ** 2; // TODO: validation around minimum liquidity?
             // factor of 2 for extra significant buffer given swap increases liquidity due to fee
             liquidityDesired -= 2 * liquidityBurned;
+            // back to amounts{0,1} with uniswap v3 sqrt price so near exact contribution (< original desired)
             (amount0Desired, amount1Desired) = LiquidityMath.toAmounts(
                 liquidityDesired,
                 sqrtPriceX96
@@ -463,7 +478,7 @@ contract MarginalV1LBLiquidityReceiver is
                     })
                 );
 
-            // if rare edge case of < 0 case, have dust left over in contract
+            // if rare edge case of < 0 case, have extra dust left over in contract
             amount0 = _amount0 > 0 ? uint256(_amount0) : 0;
             amount1 = _amount1 > 0 ? uint256(_amount1) : 0;
         } else {
@@ -504,6 +519,14 @@ contract MarginalV1LBLiquidityReceiver is
                 uniswapV3Pool
             );
         }
+
+        // refund any left over unused amounts in mint due to difference in lbp price and marginal v1 price
+        uint256 balance0 = balance(token0);
+        uint256 balance1 = balance(token1);
+        if (balance0 > 0)
+            pay(token0, address(this), params.treasuryAddress, balance0);
+        if (balance1 > 0)
+            pay(token1, address(this), params.treasuryAddress, balance1);
 
         marginalV1PoolInfo = PoolInfo({
             blockTimestamp: _blockTimestamp(),
