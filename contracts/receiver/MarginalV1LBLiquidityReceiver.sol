@@ -23,6 +23,7 @@ import {IRouter as IMarginalV1Router} from "@marginal/v1-periphery/contracts/int
 import {PeripheryImmutableState} from "../base/PeripheryImmutableState.sol";
 import {PeripheryPools} from "../base/PeripheryPools.sol";
 import {PeripheryPayments} from "../base/PeripheryPayments.sol";
+import {RangeMath} from "../libraries/RangeMath.sol";
 
 import {IMarginalV1LBFactory} from "../interfaces/IMarginalV1LBFactory.sol";
 import {IMarginalV1LBPool} from "../interfaces/IMarginalV1LBPool.sol";
@@ -46,6 +47,9 @@ contract MarginalV1LBLiquidityReceiver is
 
     /// @inheritdoc IMarginalV1LBLiquidityReceiver
     address public immutable deployer;
+
+    /// @inheritdoc IMarginalV1LBLiquidityReceiver
+    bool public zeroForOne;
 
     /// @inheritdoc IMarginalV1LBLiquidityReceiver
     uint256 public reserve0;
@@ -88,10 +92,20 @@ contract MarginalV1LBLiquidityReceiver is
     /// @inheritdoc IMarginalV1LBLiquidityReceiver
     PoolInfo public marginalV1PoolInfo;
 
+    uint256 private unlocked = 1; // uses OZ convention of 1 for false and 2 for true
+    modifier lock() {
+        if (unlocked == 1) revert Locked();
+        unlocked = 1;
+        _;
+        unlocked = 2;
+    }
+
     error Unauthorized();
+    error Initialized();
     error Locked();
     error Notified();
-    error NotFinalized();
+    error PoolNotInitialized();
+    error PoolNotFinalized();
     error InvalidRatio();
     error InvalidReserves();
     error InvalidPool();
@@ -101,19 +115,19 @@ contract MarginalV1LBLiquidityReceiver is
     error Amount1LessThanMin();
     error LiquidityAdded();
     error LiquidityNotAdded();
+    error DeadlineNotPassed();
 
     constructor(
         address _factory,
         address _marginalV1Factory,
         address _WETH9,
         address _pool,
-        bytes memory data
+        bytes memory data // receiver parameters encoded
     )
         PeripheryImmutableState(_factory, _marginalV1Factory, _WETH9)
         MarginalV1LBReceiver(_pool)
     {
         deployer = msg.sender;
-
         ReceiverParams memory params = abi.decode(data, (ReceiverParams));
         checkParams(params);
         receiverParams = params;
@@ -126,6 +140,78 @@ contract MarginalV1LBLiquidityReceiver is
             revert InvalidRatio();
         fullTickRange(params.uniswapV3Fee);
         maximumLeverage(params.marginalV1Maintenance);
+    }
+
+    /// @inheritdoc IMarginalV1LBReceiver
+    function seeds(
+        uint128 liquidity,
+        uint160 sqrtPriceX96,
+        uint160 sqrtPriceLowerX96,
+        uint160 sqrtPriceUpperX96
+    )
+        public
+        view
+        virtual
+        override(MarginalV1LBReceiver, IMarginalV1LBReceiver)
+        returns (uint256 amount0, uint256 amount1)
+    {
+        bool _zeroForOne = (sqrtPriceX96 == sqrtPriceLowerX96);
+        (uint256 amount0Pool, uint256 amount1Pool) = RangeMath.toAmounts(
+            liquidity,
+            sqrtPriceX96,
+            sqrtPriceLowerX96,
+            sqrtPriceUpperX96
+        );
+        (uint256 amount0Desired, uint256 amount1Desired) = getAmountsDesired(
+            sqrtPriceX96,
+            amount0Pool,
+            amount1Pool,
+            _zeroForOne
+        );
+        // @dev extra tokens to add to reserves of receiver is in the offered token as
+        // notifyRewardAmounts provides acquired token side of full range liquidity mint
+        amount0 = _zeroForOne ? amount0Desired : 0;
+        amount1 = _zeroForOne ? 0 : amount1Desired;
+    }
+
+    /// @inheritdoc IMarginalV1LBReceiver
+    function initialize()
+        external
+        virtual
+        override(MarginalV1LBReceiver, IMarginalV1LBReceiver)
+    {
+        (uint160 sqrtPriceInitializeX96, uint160 sqrtPriceFinalizeX96) = (
+            IMarginalV1LBPool(pool).sqrtPriceInitializeX96(),
+            IMarginalV1LBPool(pool).sqrtPriceFinalizeX96()
+        );
+        if (sqrtPriceInitializeX96 == 0) revert PoolNotInitialized();
+
+        (uint160 sqrtPriceLowerX96, uint160 sqrtPriceUpperX96) = (
+            sqrtPriceInitializeX96 < sqrtPriceFinalizeX96
+                ? (sqrtPriceInitializeX96, sqrtPriceFinalizeX96)
+                : (sqrtPriceFinalizeX96, sqrtPriceInitializeX96)
+        );
+        bool _zeroForOne = (sqrtPriceInitializeX96 == sqrtPriceLowerX96);
+        zeroForOne = _zeroForOne;
+
+        (uint256 _reserve0, uint256 _reserve1) = (reserve0, reserve1);
+        if (_reserve0 > 0 || _reserve1 > 0) revert Initialized();
+
+        // calculate amount{0,1}Owed for reserves in case where need most tokens of hitting finalize price
+        (, , uint128 liquidity, , , , , ) = IMarginalV1LBPool(pool).state();
+        (uint256 amount0, uint256 amount1) = seeds(
+            liquidity,
+            sqrtPriceInitializeX96,
+            sqrtPriceLowerX96,
+            sqrtPriceUpperX96
+        );
+
+        if (_reserve0 + amount0 > balance(token0)) revert Amount0LessThanMin();
+        if (_reserve1 + amount1 > balance(token1)) revert Amount1LessThanMin();
+
+        reserve0 += amount0;
+        reserve1 += amount1;
+        unlocked = 2;
     }
 
     /// @notice Returns the full tick range for Uniswap v3 pool with given fee tier
@@ -172,24 +258,26 @@ contract MarginalV1LBLiquidityReceiver is
         unchecked {
             delta = _blockTimestamp() - blockTimestamp;
         }
-        if (blockTimestamp == 0 || delta < duration) revert Locked();
+        if (blockTimestamp == 0 || delta < duration) revert DeadlineNotPassed();
     }
 
     /// @inheritdoc IMarginalV1LBReceiver
     function notifyRewardAmounts(
         uint256 amount0,
         uint256 amount1
-    ) external virtual override(MarginalV1LBReceiver, IMarginalV1LBReceiver) {
+    )
+        external
+        virtual
+        override(MarginalV1LBReceiver, IMarginalV1LBReceiver)
+        lock
+    {
         address supplier = IMarginalV1LBPool(pool).supplier();
         if (msg.sender != supplier) revert Unauthorized();
 
-        (uint160 sqrtPriceX96, , , , , , , bool finalized) = IMarginalV1LBPool(
-            pool
-        ).state();
-        if (!finalized) revert NotFinalized();
+        (, , , , , , , bool finalized) = IMarginalV1LBPool(pool).state();
+        if (!finalized) revert PoolNotFinalized();
 
         // only support tokens with standard ERC20 transfer
-        if (reserve0 > 0 || reserve1 > 0) revert Notified();
         if (reserve0 + amount0 > balance(token0)) revert Amount0LessThanMin();
         if (reserve1 + amount1 > balance(token1)) revert Amount1LessThanMin();
 
@@ -200,9 +288,9 @@ contract MarginalV1LBLiquidityReceiver is
         amount0 -= amount0Treasury;
         amount1 -= amount1Treasury;
 
-        // set reserves
-        reserve0 = amount0;
-        reserve1 = amount1;
+        // update reserves
+        reserve0 += amount0;
+        reserve1 += amount1;
 
         if (amount0Treasury > 0)
             pay(token0, address(this), params.treasuryAddress, amount0Treasury);
@@ -210,25 +298,26 @@ contract MarginalV1LBLiquidityReceiver is
             pay(token1, address(this), params.treasuryAddress, amount1Treasury);
     }
 
-    /// @notice Returns the amounts desired for amounts{0,1} from reserves
-    /// @dev Uses max of liquidity values calculated from amounts{0,1} given reserves from lbp range position
+    /// @notice Returns the amounts desired to mint full range liquidity given reserves from lbp
+    /// @dev Uses liquidity value calculated from reserve amount in token acquired
     /// @param sqrtPriceX96 The price of the pool as a sqrt(token1/token0) Q64.96 value
     /// @param amount0 The amount of token0 to use from reserve
     /// @param amount1 The amount of token1 to use from reserve
+    /// @param _zeroForOne Whether lbp offered up token0 for token1
     /// @return amount0Desired The maximum amount of token0 needed to mint full range liquidity
     /// @return amount1Desired The maximum amount of token1 needed to mint full range liquidity
     function getAmountsDesired(
         uint160 sqrtPriceX96,
         uint256 amount0,
-        uint256 amount1
+        uint256 amount1,
+        bool _zeroForOne
     ) public pure returns (uint256 amount0Desired, uint256 amount1Desired) {
         // calculate additional amount{0,1} needed to provide full range liquidity
-        // @dev want the *max* of these two in liquidity values
         (uint128 liquidity0, uint128 liquidity1) = (
             LiquidityAmounts.getLiquidityForAmount0(sqrtPriceX96, amount0),
             LiquidityAmounts.getLiquidityForAmount1(sqrtPriceX96, amount1)
         );
-        uint128 liquidity = liquidity0 < liquidity1 ? liquidity1 : liquidity0; // max of two for amounts desired
+        uint128 liquidity = _zeroForOne ? liquidity1 : liquidity0; // liquidity determined by lbp acquired token
         (amount0Desired, amount1Desired) = LiquidityMath.toAmounts(
             liquidity,
             sqrtPriceX96
@@ -239,6 +328,7 @@ contract MarginalV1LBLiquidityReceiver is
     function mintUniswapV3()
         external
         payable
+        lock
         returns (
             address uniswapV3Pool,
             uint256 tokenId,
@@ -281,26 +371,14 @@ contract MarginalV1LBLiquidityReceiver is
         reserve1 -= amount1UniswapV3;
 
         // transfer in diff from sender between reserves dedicated to Uniswap v3 and amounts for mint
-        // @dev lbp price used for amounts desired as max of each token{0,1} could send to pool
+        // @dev lbp price used for amounts desired, capped by token acquired from lbp
+        // initialize should transfer in worst case excess of amounts{0,1}Desired vs reserves{0,1} prior to minting
         (uint256 amount0Desired, uint256 amount1Desired) = getAmountsDesired(
             sqrtPriceX96,
             amount0UniswapV3,
-            amount1UniswapV3
+            amount1UniswapV3,
+            zeroForOne
         );
-        if (amount0Desired > amount0UniswapV3)
-            pay(
-                token0,
-                msg.sender,
-                address(this),
-                amount0Desired - amount0UniswapV3
-            );
-        if (amount1Desired > amount1UniswapV3)
-            pay(
-                token1,
-                msg.sender,
-                address(this),
-                amount1Desired - amount1UniswapV3
-            );
 
         // calculate tick upper/lower ticks for full tick range given uniswap v3 fee tier
         (int24 tickLower, int24 tickUpper) = fullTickRange(params.uniswapV3Fee);
@@ -338,22 +416,6 @@ contract MarginalV1LBLiquidityReceiver is
                 })
             );
 
-        // refund any left over unused amounts in mint due to difference in lbp price and uniswap v3 price
-        if (amount0Desired > amount0)
-            pay(
-                token0,
-                address(this),
-                params.treasuryAddress,
-                amount0Desired - amount0
-            );
-        if (amount1Desired > amount1)
-            pay(
-                token1,
-                address(this),
-                params.treasuryAddress,
-                amount1Desired - amount1
-            );
-
         uniswapV3PoolInfo = PoolInfo({
             blockTimestamp: _blockTimestamp(),
             poolAddress: uniswapV3Pool,
@@ -366,6 +428,7 @@ contract MarginalV1LBLiquidityReceiver is
     function mintMarginalV1()
         external
         payable
+        lock
         returns (
             address marginalV1Pool,
             uint256 shares,
@@ -404,17 +467,15 @@ contract MarginalV1LBLiquidityReceiver is
         }
 
         // transfer in diff from sender between reserves dedicated to Marginal v1 and amounts for mint
-        // @dev lbp price used for amounts desired as max of each token{0,1} could send to pool
+        // @dev lbp price used for amounts desired, capped by token acquired from lbp
         (uint160 sqrtPriceX96, , , , , , , ) = IMarginalV1LBPool(pool).state();
+        // initialize should transfer in worst case excess of amounts{0,1}Desired vs reserves{0,1} prior to minting
         (uint256 amount0Desired, uint256 amount1Desired) = getAmountsDesired(
             sqrtPriceX96,
             _reserve0,
-            _reserve1
+            _reserve1,
+            zeroForOne
         );
-        if (amount0Desired > _reserve0)
-            pay(token0, msg.sender, address(this), amount0Desired - _reserve0);
-        if (amount1Desired > _reserve1)
-            pay(token1, msg.sender, address(this), amount1Desired - _reserve1);
 
         if (initialize) {
             address marginalV1PoolInitializer = IMarginalV1LBLiquidityReceiverDeployer(
@@ -520,7 +581,7 @@ contract MarginalV1LBLiquidityReceiver is
             );
         }
 
-        // refund any left over unused amounts in mint due to difference in lbp price and marginal v1 price
+        // refund any left over unused amounts from uniswap v3 and marginal v1 mints
         uint256 balance0 = balance(token0);
         uint256 balance1 = balance(token1);
         if (balance0 > 0)
@@ -537,7 +598,7 @@ contract MarginalV1LBLiquidityReceiver is
     }
 
     /// @inheritdoc IMarginalV1LBLiquidityReceiver
-    function freeUniswapV3(address recipient) external {
+    function freeUniswapV3(address recipient) external lock {
         PoolInfo memory info = uniswapV3PoolInfo;
         if (info.poolAddress == address(0)) revert LiquidityNotAdded();
 
@@ -562,7 +623,7 @@ contract MarginalV1LBLiquidityReceiver is
     }
 
     /// @inheritdoc IMarginalV1LBLiquidityReceiver
-    function freeMarginalV1(address recipient) external {
+    function freeMarginalV1(address recipient) external lock {
         PoolInfo memory info = marginalV1PoolInfo;
         if (info.poolAddress == address(0)) revert LiquidityNotAdded();
 

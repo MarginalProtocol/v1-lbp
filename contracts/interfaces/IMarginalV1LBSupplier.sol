@@ -16,20 +16,22 @@ interface IMarginalV1LBSupplier {
         int24 tickUpper;
         uint256 blockTimestampInitialize;
         int24 tick;
-        uint256 amountDesired;
-        uint256 amountMin;
+        uint256 amountDesired; // amount desired for pool only
+        uint256 amount0Min; // minimum amount enforced on sum of pool and receiver amounts
+        uint256 amount1Min; // minimum amount enforced on sum of pool and receiver amounts
         address receiverDeployer;
         bytes receiverData;
         uint256 deadline;
     }
 
     /// @notice Creates a new liquidity boostrapping pool if it does not exist, then initializes if not initialized
+    /// @dev Also deploys a receiver that receives funds after the liquidity bootstrapping pool is finalized
     /// @param params The parameters necessary to create and initialize a pool, encoded as `CreateAndInitializeParams` in calldata
     /// @return pool Returns the pool address based on the pair of tokens, tick lower, and tick upper, will return the newly created pool address if necessary
     /// @return receiver Returns the receiver address that receives funds after the liquidity bootstrapping pool is finalized
     /// @return shares The amount of shares minted after initializing pool with liquidity
-    /// @return amount0 The amount of the input token0 to create and initialize pool
-    /// @return amount1 The amount of the input token1 to create and initialize pool
+    /// @return amount0 The amount of the input token0 to create and initialize pool and receiver
+    /// @return amount1 The amount of the input token1 to create and initialize pool and receiver
     function createAndInitializePoolIfNecessary(
         CreateAndInitializeParams calldata params
     )

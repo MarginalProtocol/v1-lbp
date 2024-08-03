@@ -116,6 +116,7 @@ contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
     error SqrtPriceX96ExceedsLimit();
     error Amount0LessThanMin();
     error Amount1LessThanMin();
+    error SupplyLessThanMin();
     error InvalidAmountSpecified();
 
     constructor(
@@ -196,15 +197,17 @@ contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
             uint256 amount1
         )
     {
-        // TODO: finalize automatically on final swap?
         if (msg.sender != supplier) revert Unauthorized();
         if (!state.finalized && !_canExit()) revert NotFinalized(); // allows override if past minimum duration
+
+        uint256 _totalSupply = totalSupply();
+        if (_totalSupply == 0) revert SupplyLessThanMin();
 
         // burn liquidity to supplier
         (liquidityDelta, amount0, amount1) = burn(
             address(this),
             msg.sender,
-            totalSupply()
+            _totalSupply
         );
 
         // notify supplier of funds transferred on burn

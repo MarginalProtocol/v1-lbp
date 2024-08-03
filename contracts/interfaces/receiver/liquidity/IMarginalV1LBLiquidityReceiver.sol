@@ -10,6 +10,10 @@ interface IMarginalV1LBLiquidityReceiver is IMarginalV1LBReceiver {
     /// @return The address of the receiver deployer
     function deployer() external view returns (address);
 
+    /// @notice Returns whether liquidity bootstrapping pool offered up token0 to acquire token1
+    /// @return Whether pool offered up token0 to acquire token1
+    function zeroForOne() external view returns (bool);
+
     /// @notice Returns the amount of token0 left in the receiver for liquidity pools
     /// @return The amount of token0 left
     function reserve0() external view returns (uint256);

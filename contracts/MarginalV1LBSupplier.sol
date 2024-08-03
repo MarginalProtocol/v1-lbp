@@ -42,7 +42,6 @@ contract MarginalV1LBSupplier is
 
     error InvalidPool();
     error InvalidReceiver();
-    error AmountLessThanMin(uint256 amount);
     error Amount0LessThanMin();
     error Amount1LessThanMin();
 
@@ -114,6 +113,7 @@ contract MarginalV1LBSupplier is
                 block.timestamp // if not yet created, use current block timestamp
             );
 
+            // deploy the receiver after creating liquidity bootstrapping pool
             if (params.receiverDeployer == address(0)) revert InvalidReceiver();
             // @dev should revert if data not valid
             receiver = IMarginalV1LBReceiverDeployer(params.receiverDeployer)
@@ -147,10 +147,27 @@ contract MarginalV1LBSupplier is
                 )
             );
 
-            uint256 amount = sqrtPriceX96 == sqrtPriceLowerX96
-                ? amount0
-                : amount1;
-            if (amount < params.amountMin) revert AmountLessThanMin(amount);
+            // transfer funds to receiver to cover any additional token needed once receive from lbp at finalize
+            (
+                uint256 amount0Receiver,
+                uint256 amount1Receiver
+            ) = IMarginalV1LBReceiver(receiver).seeds(
+                    liquidity,
+                    sqrtPriceX96,
+                    sqrtPriceLowerX96,
+                    sqrtPriceUpperX96
+                );
+            if (amount0Receiver > 0)
+                pay(poolKey.token0, msg.sender, receiver, amount0Receiver);
+            if (amount1Receiver > 0)
+                pay(poolKey.token1, msg.sender, receiver, amount1Receiver);
+            IMarginalV1LBReceiver(receiver).initialize();
+
+            amount0 += amount0Receiver;
+            amount1 += amount1Receiver;
+
+            if (amount0 < params.amount0Min) revert Amount0LessThanMin();
+            if (amount1 < params.amount1Min) revert Amount1LessThanMin();
         }
     }
 

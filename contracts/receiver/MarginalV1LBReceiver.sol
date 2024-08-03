@@ -19,6 +19,17 @@ abstract contract MarginalV1LBReceiver is IMarginalV1LBReceiver {
     }
 
     /// @inheritdoc IMarginalV1LBReceiver
+    function seeds(
+        uint128 liquidity,
+        uint160 sqrtPriceX96,
+        uint160 sqrtPriceLowerX96,
+        uint160 sqrtPriceUpperX96
+    ) public view virtual returns (uint256 amount0, uint256 amount1);
+
+    /// @inheritdoc IMarginalV1LBReceiver
+    function initialize() external virtual;
+
+    /// @inheritdoc IMarginalV1LBReceiver
     function notifyRewardAmounts(
         uint256 amount0,
         uint256 amount1
