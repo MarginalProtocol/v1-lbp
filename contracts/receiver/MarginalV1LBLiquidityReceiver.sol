@@ -156,14 +156,18 @@ contract MarginalV1LBLiquidityReceiver is
         returns (uint256 amount0, uint256 amount1)
     {
         bool _zeroForOne = (sqrtPriceX96 == sqrtPriceLowerX96);
+        uint160 sqrtPriceFinalizeX96 = _zeroForOne
+            ? sqrtPriceUpperX96
+            : sqrtPriceLowerX96;
+
         (uint256 amount0Pool, uint256 amount1Pool) = RangeMath.toAmounts(
             liquidity,
-            sqrtPriceX96,
+            sqrtPriceFinalizeX96,
             sqrtPriceLowerX96,
             sqrtPriceUpperX96
         );
         (uint256 amount0Desired, uint256 amount1Desired) = getAmountsDesired(
-            sqrtPriceX96,
+            sqrtPriceFinalizeX96,
             amount0Pool,
             amount1Pool,
             _zeroForOne
@@ -351,9 +355,7 @@ contract MarginalV1LBLiquidityReceiver is
             ).uniswapV3NonfungiblePositionManager();
 
         // create uniswap v3 pool if necessary
-        (uint160 sqrtPriceX96, , , , , , , bool finalized) = IMarginalV1LBPool(
-            pool
-        ).state();
+        (uint160 sqrtPriceX96, , , , , , , ) = IMarginalV1LBPool(pool).state();
         uniswapV3Pool = IUniswapV3NonfungiblePositionManager(
             uniswapV3NonfungiblePositionManager
         ).createAndInitializePoolIfNecessary(
@@ -370,7 +372,6 @@ contract MarginalV1LBLiquidityReceiver is
         reserve0 -= amount0UniswapV3;
         reserve1 -= amount1UniswapV3;
 
-        // transfer in diff from sender between reserves dedicated to Uniswap v3 and amounts for mint
         // @dev lbp price used for amounts desired, capped by token acquired from lbp
         // initialize should transfer in worst case excess of amounts{0,1}Desired vs reserves{0,1} prior to minting
         (uint256 amount0Desired, uint256 amount1Desired) = getAmountsDesired(
@@ -381,6 +382,8 @@ contract MarginalV1LBLiquidityReceiver is
         );
 
         // calculate tick upper/lower ticks for full tick range given uniswap v3 fee tier
+        // @dev finite full tick range implies *less* physical reserves required to mint than calculated at initialize
+        // TODO: check finite full tick range math
         (int24 tickLower, int24 tickUpper) = fullTickRange(params.uniswapV3Fee);
 
         // add liquidity based on lbp price to avoid slippage issues
@@ -466,7 +469,6 @@ contract MarginalV1LBLiquidityReceiver is
             initialize = !initialized;
         }
 
-        // transfer in diff from sender between reserves dedicated to Marginal v1 and amounts for mint
         // @dev lbp price used for amounts desired, capped by token acquired from lbp
         (uint160 sqrtPriceX96, , , , , , , ) = IMarginalV1LBPool(pool).state();
         // initialize should transfer in worst case excess of amounts{0,1}Desired vs reserves{0,1} prior to minting
