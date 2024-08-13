@@ -26,4 +26,8 @@ interface IMarginalV1LBLiquidityReceiverDeployer is
     /// @notice Returns the address of the Marginal v1 periphery router
     /// @return The address of the Marginal v1 router
     function marginalV1Router() external view returns (address);
+
+    /// @notice Returns the address of WETH9
+    /// @return The address of WETH9
+    function WETH9() external view returns (address);
 }

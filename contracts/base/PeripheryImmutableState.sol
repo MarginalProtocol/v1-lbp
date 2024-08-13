@@ -8,9 +8,13 @@ import "../interfaces/IPeripheryImmutableState.sol";
 /// @title Immutable state
 /// @notice Immutable state used by liquidity bootstrapping periphery contracts
 abstract contract PeripheryImmutableState is IPeripheryImmutableState {
+    /// @inheritdoc IPeripheryImmutableState
     address public immutable factory;
+    /// @inheritdoc IPeripheryImmutableState
     address public immutable marginalV1Factory;
+    /// @inheritdoc IPeripheryImmutableState
     address public immutable uniswapV3Factory;
+    /// @inheritdoc IPeripheryImmutableState
     address public immutable WETH9;
 
     constructor(address _factory, address _marginalV1Factory, address _WETH9) {
