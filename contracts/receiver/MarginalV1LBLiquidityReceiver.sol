@@ -100,6 +100,41 @@ contract MarginalV1LBLiquidityReceiver is
         unlocked = 2;
     }
 
+    event Initialize(uint256 reserve0, uint256 reserve1);
+    event RewardsAdded(
+        uint256 amount0,
+        uint256 amount1,
+        uint256 reserve0After,
+        uint256 reserve1After
+    );
+    event MintUniswapV3(
+        address uniswapV3Pool,
+        uint256 tokenId,
+        uint128 liquidity,
+        uint256 amount0,
+        uint256 amount1,
+        uint256 reserve0After,
+        uint256 reserve1After
+    );
+    event MintMarginalV1(
+        address marginalV1Pool,
+        uint256 shares,
+        uint256 amount0,
+        uint256 amount1,
+        uint256 reserve0After,
+        uint256 reserve1After
+    );
+    event FreeUniswapV3(
+        address uniswapV3Pool,
+        uint256 tokenId,
+        address recipient
+    );
+    event FreeMarginalV1(
+        address marginalV1Pool,
+        uint256 shares,
+        address recipient
+    );
+
     error Unauthorized();
     error Initialized();
     error Locked();
@@ -212,10 +247,14 @@ contract MarginalV1LBLiquidityReceiver is
 
         if (_reserve0 + amount0 > balance(token0)) revert Amount0LessThanMin();
         if (_reserve1 + amount1 > balance(token1)) revert Amount1LessThanMin();
+        _reserve0 += amount0;
+        _reserve1 += amount1;
 
-        reserve0 += amount0;
-        reserve1 += amount1;
+        reserve0 = _reserve0;
+        reserve1 = _reserve1;
         unlocked = 2;
+
+        emit Initialize(_reserve0, _reserve1);
     }
 
     /// @notice Returns the full tick range for Uniswap v3 pool with given fee tier
@@ -282,24 +321,28 @@ contract MarginalV1LBLiquidityReceiver is
         if (!finalized) revert PoolNotFinalized();
 
         // only support tokens with standard ERC20 transfer
-        if (reserve0 + amount0 > balance(token0)) revert Amount0LessThanMin();
-        if (reserve1 + amount1 > balance(token1)) revert Amount1LessThanMin();
+        (uint256 _reserve0, uint256 _reserve1) = (reserve0, reserve1);
+        if (_reserve0 + amount0 > balance(token0)) revert Amount0LessThanMin();
+        if (_reserve1 + amount1 > balance(token1)) revert Amount1LessThanMin();
 
         // pay treasury given ratio
         ReceiverParams memory params = receiverParams;
         uint256 amount0Treasury = (amount0 * params.treasuryRatio) / 1e6;
         uint256 amount1Treasury = (amount1 * params.treasuryRatio) / 1e6;
-        amount0 -= amount0Treasury;
-        amount1 -= amount1Treasury;
+
+        _reserve0 += amount0 - amount0Treasury;
+        _reserve1 += amount1 - amount1Treasury;
 
         // update reserves
-        reserve0 += amount0;
-        reserve1 += amount1;
+        reserve0 = _reserve0;
+        reserve1 = _reserve1;
 
         if (amount0Treasury > 0)
             pay(token0, address(this), params.treasuryAddress, amount0Treasury);
         if (amount1Treasury > 0)
             pay(token1, address(this), params.treasuryAddress, amount1Treasury);
+
+        emit RewardsAdded(amount0, amount1, _reserve0, _reserve1);
     }
 
     /// @notice Returns the amounts desired to mint full range liquidity given reserves from lbp
@@ -368,9 +411,12 @@ contract MarginalV1LBLiquidityReceiver is
         uint256 amount0UniswapV3 = (_reserve0 * params.uniswapV3Ratio) / 1e6;
         uint256 amount1UniswapV3 = (_reserve1 * params.uniswapV3Ratio) / 1e6;
 
+        _reserve0 -= amount0UniswapV3;
+        _reserve1 -= amount1UniswapV3;
+
         // update reserves
-        reserve0 -= amount0UniswapV3;
-        reserve1 -= amount1UniswapV3;
+        reserve0 = _reserve0;
+        reserve1 = _reserve1;
 
         // @dev lbp price used for amounts desired, capped by token acquired from lbp
         // initialize should transfer in worst case excess of amounts{0,1}Desired vs reserves{0,1} prior to minting
@@ -425,6 +471,16 @@ contract MarginalV1LBLiquidityReceiver is
             tokenId: tokenId,
             shares: 0 // nonfungible
         });
+
+        emit MintUniswapV3(
+            uniswapV3Pool,
+            tokenId,
+            liquidity,
+            amount0,
+            amount1,
+            _reserve0,
+            _reserve1
+        );
     }
 
     /// @inheritdoc IMarginalV1LBLiquidityReceiver
@@ -597,6 +653,8 @@ contract MarginalV1LBLiquidityReceiver is
             tokenId: 0, // fungible
             shares: shares
         });
+
+        emit MintMarginalV1(marginalV1Pool, shares, amount0, amount1, 0, 0);
     }
 
     /// @inheritdoc IMarginalV1LBLiquidityReceiver
@@ -622,6 +680,8 @@ contract MarginalV1LBLiquidityReceiver is
         IUniswapV3NonfungiblePositionManager(
             uniswapV3NonfungiblePositionManager
         ).transferFrom(address(this), recipient, info.tokenId);
+
+        emit FreeUniswapV3(info.poolAddress, info.tokenId, recipient);
     }
 
     /// @inheritdoc IMarginalV1LBLiquidityReceiver
@@ -639,5 +699,7 @@ contract MarginalV1LBLiquidityReceiver is
         marginalV1PoolInfo = info;
 
         pay(info.poolAddress, address(this), recipient, info.shares);
+
+        emit FreeMarginalV1(info.poolAddress, info.shares, recipient);
     }
 }

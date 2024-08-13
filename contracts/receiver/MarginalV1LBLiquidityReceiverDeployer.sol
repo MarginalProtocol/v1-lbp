@@ -27,6 +27,8 @@ contract MarginalV1LBLiquidityReceiverDeployer is
         _;
     }
 
+    event ReceiverDeployed(address indexed pool, bytes data, address receiver);
+
     error Unauthorized();
 
     constructor(
@@ -60,5 +62,6 @@ contract MarginalV1LBLiquidityReceiverDeployer is
                 salt: keccak256(abi.encode(msg.sender, pool))
             }(factory, marginalV1Factory, WETH9, pool, data)
         );
+        emit ReceiverDeployed(pool, data, receiver);
     }
 }
