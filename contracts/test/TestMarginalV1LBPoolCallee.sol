@@ -124,7 +124,8 @@ contract TestMarginalV1LBPoolCallee is
     }
 
     function finalize(
-        address pool
+        address pool,
+        address recipient
     )
         external
         returns (
@@ -136,7 +137,7 @@ contract TestMarginalV1LBPoolCallee is
     {
         (liquidityDelta, sqrtPriceX96, amount0, amount1) = IMarginalV1LBPool(
             pool
-        ).finalize(abi.encode(msg.sender));
+        ).finalize(abi.encode(recipient));
         emit FinalizeReturn(liquidityDelta, sqrtPriceX96, amount0, amount1);
     }
 
@@ -145,19 +146,19 @@ contract TestMarginalV1LBPoolCallee is
         uint256 amount1Transferred,
         bytes calldata data
     ) external {
-        address sender = abi.decode(data, (address));
+        address recipient = abi.decode(data, (address));
 
         if (amount0Transferred > 0) {
             address token0 = IMarginalV1LBPool(msg.sender).token0();
             IERC20(token0).safeTransfer(
-                sender,
+                recipient,
                 IERC20(token0).balanceOf(address(this))
             );
         }
         if (amount1Transferred > 0) {
             address token1 = IMarginalV1LBPool(msg.sender).token1();
             IERC20(token1).safeTransfer(
-                sender,
+                recipient,
                 IERC20(token1).balanceOf(address(this))
             );
         }
