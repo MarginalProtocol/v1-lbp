@@ -91,6 +91,13 @@ def callee(project, accounts):
 
 
 @pytest.fixture(scope="session")
+def ticks():
+    tick_width = 2000  # ~50% in price from low to high
+    tick_mid = 197517  # USDC/WETH tick on spot
+    return (tick_mid - tick_width, tick_mid + tick_width)
+
+
+@pytest.fixture(scope="session")
 def pool(project, accounts, chain, token_a, token_b, ticks, callee, create_pool):
     (tick_lower, tick_upper) = ticks
     timestamp_initialize = chain.pending_timestamp
