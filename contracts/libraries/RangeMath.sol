@@ -27,8 +27,6 @@ library RangeMath {
             sqrtPriceX96 > sqrtPriceUpperX96
         ) revert InvalidSqrtPriceX96();
 
-        // TODO: check both amount{0,1}Delta values are negative
-        // TODO: check -int(0) case below ok when at end of ranges
         (int256 amount0Delta, ) = SwapMath.swapAmounts(
             liquidity,
             sqrtPriceX96,

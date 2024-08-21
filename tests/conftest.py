@@ -93,7 +93,7 @@ def callee(project, accounts):
 @pytest.fixture(scope="session")
 def ticks():
     tick_width = 2000  # ~50% in price from low to high
-    tick_mid = 197517  # USDC/WETH tick on spot
+    tick_mid = 197682  # USDC/WETH tick on spot
     return (tick_mid - tick_width, tick_mid + tick_width)
 
 
@@ -191,3 +191,13 @@ def swap_math_lib(project, accounts):
 @pytest.fixture(scope="session")
 def tick_math_lib(project, accounts):
     return project.MockTickMath.deploy(sender=accounts[0])
+
+
+@pytest.fixture(scope="session")
+def range_math_lib(project, accounts):
+    return project.MockRangeMath.deploy(sender=accounts[0])
+
+
+@pytest.fixture(scope="session")
+def liquidity_amounts_lib(project, accounts):
+    return project.MockLiquidityAmounts.deploy(sender=accounts[0])
