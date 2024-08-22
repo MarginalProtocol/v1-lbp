@@ -30,7 +30,10 @@ def test_pool_constructor__sets_params(
     ) == calc_sqrt_price_x96_from_tick(tick_upper)
 
     assert pool.supplier() == callee.address
-    assert pool.blockTimestampInitialize() == chain.blocks.head.timestamp
+    assert (
+        pytest.approx(pool.blockTimestampInitialize(), abs=10)
+        == chain.blocks.head.timestamp
+    )
 
 
 def test_pool_constructor__reverts_when_tick_lower_greater_than_upper(

@@ -1,18 +1,26 @@
 import pytest
 
+from math import sqrt
+
 
 @pytest.fixture(scope="module")
 def spot_reserve0(pool, token_a, token_b):
-    x = int(4.22468e12)  # e.g. USDC reserves on spot
-    y = int(1.62406e21)  # e.g. WETH reserves on spot
+    x = int(4.22468e14)  # e.g. USDC reserves on spot
+    y = int(1.62406e23)  # e.g. WETH reserves on spot
     return x if pool.token0() == token_a.address else y
 
 
 @pytest.fixture(scope="module")
 def spot_reserve1(pool, token_a, token_b):
-    x = int(4.22468e12)  # e.g. USDC reserves on spot
-    y = int(1.62406e21)  # e.g. WETH reserves on spot
+    x = int(4.22468e14)  # e.g. USDC reserves on spot
+    y = int(1.62406e23)  # e.g. WETH reserves on spot
     return y if pool.token1() == token_b.address else x
+
+
+@pytest.fixture(scope="module")
+def sqrt_price_x96_initial(spot_reserve0, spot_reserve1):
+    sqrt_price = sqrt(spot_reserve1 / spot_reserve0)
+    return int(sqrt_price * (1 << 96))
 
 
 @pytest.fixture(scope="module")

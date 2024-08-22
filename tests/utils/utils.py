@@ -72,6 +72,19 @@ def calc_amounts_from_liquidity_sqrt_price_x96(
     return (amount0, amount1)
 
 
+def calc_range_amounts_from_liquidity_sqrt_price_x96(
+    liquidity: int,
+    sqrt_price_x96: int,
+    sqrt_price_lower_x96: int,
+    sqrt_price_upper_x96: int,
+) -> (int, int):
+    amount0 = (liquidity << 96) // sqrt_price_x96 - (
+        liquidity << 96
+    ) // sqrt_price_upper_x96
+    amount1 = (liquidity * (sqrt_price_x96 - sqrt_price_lower_x96)) // (1 << 96)
+    return (amount0, amount1)
+
+
 # @dev sqrt in OZ solidity results in slight diff with python math.sqrt
 def calc_liquidity_sqrt_price_x96_from_reserves(
     reserve0: int, reserve1: int

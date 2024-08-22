@@ -45,7 +45,6 @@ contract TestMarginalV1LBPoolCallee is
 
     function initialize(
         address pool,
-        address recipient,
         uint128 liquidityDelta,
         uint160 sqrtPriceX96
     ) external returns (uint256 shares, uint256 amount0, uint256 amount1) {
