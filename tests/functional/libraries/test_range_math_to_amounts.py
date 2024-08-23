@@ -7,12 +7,12 @@ from utils.utils import calc_sqrt_price_x96_from_tick, calc_swap_amounts
 
 @pytest.fixture
 def reserve0():
-    return int(4.22468e12)  # e.g. USDC reserves on spot
+    return int(1.62406e21)  # e.g. WETH reserves on spot
 
 
 @pytest.fixture
 def reserve1():
-    return int(1.62406e21)  # e.g. WETH reserves on spot
+    return int(4.22468e12)  # e.g. USDC reserves on spot
 
 
 @pytest.fixture
