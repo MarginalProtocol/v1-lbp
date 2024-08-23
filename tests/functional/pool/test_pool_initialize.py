@@ -8,7 +8,7 @@ from utils.utils import (
 
 
 @pytest.mark.parametrize("fee_protocol", [0, 10, 100])
-@pytest.mark.parametrize("use_sqrt_price_lower_x96", [True, False])
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 def test_pool_initialize__updates_state(
     another_pool,
     factory,
@@ -21,7 +21,7 @@ def test_pool_initialize__updates_state(
     spot_reserve1,
     chain,
     fee_protocol,
-    use_sqrt_price_lower_x96,
+    init_with_sqrt_price_lower_x96,
 ):
     liquidity_spot = int(sqrt(spot_reserve0 * spot_reserve1))
     liquidity_delta = liquidity_spot * 1 // 10000  # 0.01% of spot reserves
@@ -38,7 +38,7 @@ def test_pool_initialize__updates_state(
     sqrt_price_lower_x96 = another_pool.sqrtPriceLowerX96()
     sqrt_price_upper_x96 = another_pool.sqrtPriceUpperX96()
     sqrt_price_x96 = (
-        sqrt_price_lower_x96 if use_sqrt_price_lower_x96 else sqrt_price_upper_x96
+        sqrt_price_lower_x96 if init_with_sqrt_price_lower_x96 else sqrt_price_upper_x96
     )
     tick = calc_tick_from_sqrt_price_x96(sqrt_price_x96)
 
@@ -63,7 +63,7 @@ def test_pool_initialize__updates_state(
 
     sqrt_price_initialize_x96 = sqrt_price_x96
     sqrt_price_finalize_x96 = (
-        sqrt_price_upper_x96 if use_sqrt_price_lower_x96 else sqrt_price_lower_x96
+        sqrt_price_upper_x96 if init_with_sqrt_price_lower_x96 else sqrt_price_lower_x96
     )
     assert another_pool.sqrtPriceInitializeX96() == sqrt_price_initialize_x96
     assert another_pool.sqrtPriceFinalizeX96() == sqrt_price_finalize_x96
@@ -87,7 +87,7 @@ def test_pool_initialize__updates_state(
     assert result.finalized == state.finalized
 
 
-@pytest.mark.parametrize("use_sqrt_price_lower_x96", [True, False])
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 def test_pool_initialize__mints_lp_shares(
     another_pool,
     callee,
@@ -97,7 +97,7 @@ def test_pool_initialize__mints_lp_shares(
     spot_reserve0,
     spot_reserve1,
     chain,
-    use_sqrt_price_lower_x96,
+    init_with_sqrt_price_lower_x96,
 ):
     liquidity_spot = int(sqrt(spot_reserve0 * spot_reserve1))
     liquidity_delta = liquidity_spot * 1 // 10000  # 0.01% of spot reserves
@@ -110,7 +110,7 @@ def test_pool_initialize__mints_lp_shares(
     sqrt_price_lower_x96 = another_pool.sqrtPriceLowerX96()
     sqrt_price_upper_x96 = another_pool.sqrtPriceUpperX96()
     sqrt_price_x96 = (
-        sqrt_price_lower_x96 if use_sqrt_price_lower_x96 else sqrt_price_upper_x96
+        sqrt_price_lower_x96 if init_with_sqrt_price_lower_x96 else sqrt_price_upper_x96
     )
 
     # mint more to sender in case
@@ -137,7 +137,7 @@ def test_pool_initialize__mints_lp_shares(
     assert another_pool.balanceOf(another_pool.address) == liquidity_delta
 
 
-@pytest.mark.parametrize("use_sqrt_price_lower_x96", [True, False])
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 def test_pool_initialize__transfers_funds(
     another_pool,
     callee,
@@ -148,7 +148,7 @@ def test_pool_initialize__transfers_funds(
     spot_reserve1,
     chain,
     ticks,
-    use_sqrt_price_lower_x96,
+    init_with_sqrt_price_lower_x96,
 ):
     liquidity_spot = int(sqrt(spot_reserve0 * spot_reserve1))
     liquidity_delta = liquidity_spot * 1 // 10000  # 0.01% of spot reserves
@@ -161,7 +161,7 @@ def test_pool_initialize__transfers_funds(
     sqrt_price_lower_x96 = another_pool.sqrtPriceLowerX96()
     sqrt_price_upper_x96 = another_pool.sqrtPriceUpperX96()
     sqrt_price_x96 = (
-        sqrt_price_lower_x96 if use_sqrt_price_lower_x96 else sqrt_price_upper_x96
+        sqrt_price_lower_x96 if init_with_sqrt_price_lower_x96 else sqrt_price_upper_x96
     )
 
     (amount0, amount1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
@@ -212,7 +212,7 @@ def test_pool_initialize__transfers_funds(
     assert token1.balanceOf(sender.address) == balance1_sender
 
 
-@pytest.mark.parametrize("use_sqrt_price_lower_x96", [True, False])
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 def test_pool_initialize__emits_initialize(
     another_pool,
     callee,
@@ -222,7 +222,7 @@ def test_pool_initialize__emits_initialize(
     spot_reserve0,
     spot_reserve1,
     chain,
-    use_sqrt_price_lower_x96,
+    init_with_sqrt_price_lower_x96,
 ):
     liquidity_spot = int(sqrt(spot_reserve0 * spot_reserve1))
     liquidity_delta = liquidity_spot * 1 // 10000  # 0.01% of spot reserves
@@ -235,7 +235,7 @@ def test_pool_initialize__emits_initialize(
     sqrt_price_lower_x96 = another_pool.sqrtPriceLowerX96()
     sqrt_price_upper_x96 = another_pool.sqrtPriceUpperX96()
     sqrt_price_x96 = (
-        sqrt_price_lower_x96 if use_sqrt_price_lower_x96 else sqrt_price_upper_x96
+        sqrt_price_lower_x96 if init_with_sqrt_price_lower_x96 else sqrt_price_upper_x96
     )
 
     # mint more to sender in case

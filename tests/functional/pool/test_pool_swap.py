@@ -6,17 +6,17 @@ from hypothesis import given, settings, strategies as st
 
 from utils.constants import MIN_SQRT_RATIO, MAX_SQRT_RATIO
 from utils.utils import (
-    calc_amounts_from_liquidity_sqrt_price_x96,
+    calc_range_amounts_from_liquidity_sqrt_price_x96,
     calc_liquidity_sqrt_price_x96_from_reserves,
+    calc_swap_amounts,
     calc_tick_from_sqrt_price_x96,
+    calc_sqrt_price_x96_from_tick,
 )
 
 
-# TODO: add extra tests for finalize and revert below
-
-
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 def test_pool_swap__updates_state_with_exact_input_zero_for_one(
-    pool_initialized_with_liquidity,
+    pool_initialized,
     callee,
     sqrt_price_math_lib,
     swap_math_lib,
@@ -26,12 +26,17 @@ def test_pool_swap__updates_state_with_exact_input_zero_for_one(
     token0,
     token1,
     chain,
+    init_with_sqrt_price_lower_x96,
 ):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
     state = pool_initialized_with_liquidity.state()
 
-    (reserve0, reserve1) = calc_amounts_from_liquidity_sqrt_price_x96(
-        state.liquidity, state.sqrtPriceX96
+    sqrt_price_lower_x96 = pool_initialized_with_liquidity.sqrtPriceLowerX96()
+    sqrt_price_upper_x96 = pool_initialized_with_liquidity.sqrtPriceUpperX96()
+    (reserve0, reserve1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
     )
+
     amount_specified = 1 * reserve0 // 100  # 1 % of reserves in
     zero_for_one = True
     sqrt_price_limit_x96 = MIN_SQRT_RATIO + 1
@@ -75,8 +80,9 @@ def test_pool_swap__updates_state_with_exact_input_zero_for_one(
     assert pool_initialized_with_liquidity.state() == state
 
 
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 def test_pool_swap__updates_state_with_exact_input_one_for_zero(
-    pool_initialized_with_liquidity,
+    pool_initialized,
     callee,
     sqrt_price_math_lib,
     swap_math_lib,
@@ -86,12 +92,17 @@ def test_pool_swap__updates_state_with_exact_input_one_for_zero(
     token0,
     token1,
     chain,
+    init_with_sqrt_price_lower_x96,
 ):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
     state = pool_initialized_with_liquidity.state()
 
-    (reserve0, reserve1) = calc_amounts_from_liquidity_sqrt_price_x96(
-        state.liquidity, state.sqrtPriceX96
+    sqrt_price_lower_x96 = pool_initialized_with_liquidity.sqrtPriceLowerX96()
+    sqrt_price_upper_x96 = pool_initialized_with_liquidity.sqrtPriceUpperX96()
+    (reserve0, reserve1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
     )
+
     amount_specified = 1 * reserve1 // 100  # 1 % of reserves in
     zero_for_one = False
     sqrt_price_limit_x96 = MAX_SQRT_RATIO - 1
@@ -135,8 +146,9 @@ def test_pool_swap__updates_state_with_exact_input_one_for_zero(
     assert pool_initialized_with_liquidity.state() == state
 
 
-def test_pool_swap__updates_state_with_exact_output_zero_for_one(
-    pool_initialized_with_liquidity,
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
+def test_pool_swap__updates_state_with_exact_input_zero_for_one_to_range_tick(
+    pool_initialized,
     callee,
     sqrt_price_math_lib,
     swap_math_lib,
@@ -146,12 +158,133 @@ def test_pool_swap__updates_state_with_exact_output_zero_for_one(
     token0,
     token1,
     chain,
+    init_with_sqrt_price_lower_x96,
 ):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
     state = pool_initialized_with_liquidity.state()
 
-    (reserve0, reserve1) = calc_amounts_from_liquidity_sqrt_price_x96(
-        state.liquidity, state.sqrtPriceX96
+    sqrt_price_lower_x96 = pool_initialized_with_liquidity.sqrtPriceLowerX96()
+    sqrt_price_finalize_x96 = pool_initialized_with_liquidity.sqrtPriceFinalizeX96()
+
+    zero_for_one = True
+    sqrt_price_limit_x96 = MIN_SQRT_RATIO + 1
+
+    # calc amounts in/out for the swap with first pass on price thru sqrt price math lib
+    sqrt_price_x96_next = sqrt_price_lower_x96
+    (amount0, amount1) = swap_math_lib.swapAmounts(
+        state.liquidity,
+        state.sqrtPriceX96,
+        sqrt_price_x96_next,
     )
+    amount_specified = int(amount0 * 1.001)  # extra buffer
+
+    # update the oracle
+    block_timestamp_next = chain.pending_timestamp
+    tick_cumulative = state.tickCumulative + state.tick * (
+        block_timestamp_next - state.blockTimestamp
+    )
+
+    state.blockTimestamp = block_timestamp_next
+    state.tickCumulative = tick_cumulative
+
+    # update state price
+    state.sqrtPriceX96 = sqrt_price_x96_next
+    state.tick = calc_tick_from_sqrt_price_x96(sqrt_price_x96_next)
+    state.finalized = sqrt_price_x96_next == sqrt_price_finalize_x96
+
+    callee.swap(
+        pool_initialized_with_liquidity.address,
+        alice.address,
+        zero_for_one,
+        amount_specified,
+        sqrt_price_limit_x96,
+        sender=sender,
+    )
+
+    assert pool_initialized_with_liquidity.state() == state
+
+
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
+def test_pool_swap__updates_state_with_exact_input_one_for_zero_to_range_tick(
+    pool_initialized,
+    callee,
+    sqrt_price_math_lib,
+    swap_math_lib,
+    liquidity_math_lib,
+    sender,
+    alice,
+    token0,
+    token1,
+    chain,
+    init_with_sqrt_price_lower_x96,
+):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
+    state = pool_initialized_with_liquidity.state()
+
+    sqrt_price_upper_x96 = pool_initialized_with_liquidity.sqrtPriceUpperX96()
+    sqrt_price_finalize_x96 = pool_initialized_with_liquidity.sqrtPriceFinalizeX96()
+
+    zero_for_one = False
+    sqrt_price_limit_x96 = MAX_SQRT_RATIO - 1
+
+    # calc amounts in/out for the swap with first pass on price thru sqrt price math lib
+    sqrt_price_x96_next = sqrt_price_upper_x96
+    (amount0, amount1) = swap_math_lib.swapAmounts(
+        state.liquidity,
+        state.sqrtPriceX96,
+        sqrt_price_x96_next,
+    )
+    amount_specified = int(amount1 * 1.001)  # extra buffer
+
+    # update the oracle
+    block_timestamp_next = chain.pending_timestamp
+    tick_cumulative = state.tickCumulative + state.tick * (
+        block_timestamp_next - state.blockTimestamp
+    )
+
+    state.blockTimestamp = block_timestamp_next
+    state.tickCumulative = tick_cumulative
+
+    # update state price
+    state.sqrtPriceX96 = sqrt_price_x96_next
+    state.tick = calc_tick_from_sqrt_price_x96(sqrt_price_x96_next)
+    state.finalized = sqrt_price_x96_next == sqrt_price_finalize_x96
+
+    callee.swap(
+        pool_initialized_with_liquidity.address,
+        alice.address,
+        zero_for_one,
+        amount_specified,
+        sqrt_price_limit_x96,
+        sender=sender,
+    )
+
+    assert pool_initialized_with_liquidity.state() == state
+
+
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
+def test_pool_swap__updates_state_with_exact_output_zero_for_one(
+    pool_initialized,
+    callee,
+    sqrt_price_math_lib,
+    swap_math_lib,
+    liquidity_math_lib,
+    sender,
+    alice,
+    token0,
+    token1,
+    chain,
+    init_with_sqrt_price_lower_x96,
+):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
+    state = pool_initialized_with_liquidity.state()
+
+    sqrt_price_lower_x96 = pool_initialized_with_liquidity.sqrtPriceLowerX96()
+    sqrt_price_upper_x96 = pool_initialized_with_liquidity.sqrtPriceUpperX96()
+    (reserve0, reserve1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
+    )
+
     amount_specified = -1 * reserve1 // 100  # 1 % of reserves out
     zero_for_one = True
     sqrt_price_limit_x96 = MIN_SQRT_RATIO + 1
@@ -195,8 +328,9 @@ def test_pool_swap__updates_state_with_exact_output_zero_for_one(
     assert pool_initialized_with_liquidity.state() == state
 
 
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 def test_pool_swap__updates_state_with_exact_output_one_for_zero(
-    pool_initialized_with_liquidity,
+    pool_initialized,
     callee,
     sqrt_price_math_lib,
     swap_math_lib,
@@ -206,12 +340,17 @@ def test_pool_swap__updates_state_with_exact_output_one_for_zero(
     token0,
     token1,
     chain,
+    init_with_sqrt_price_lower_x96,
 ):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
     state = pool_initialized_with_liquidity.state()
 
-    (reserve0, reserve1) = calc_amounts_from_liquidity_sqrt_price_x96(
-        state.liquidity, state.sqrtPriceX96
+    sqrt_price_lower_x96 = pool_initialized_with_liquidity.sqrtPriceLowerX96()
+    sqrt_price_upper_x96 = pool_initialized_with_liquidity.sqrtPriceUpperX96()
+    (reserve0, reserve1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
     )
+
     amount_specified = -1 * reserve0 // 100  # 1 % of reserves out
     zero_for_one = False
     sqrt_price_limit_x96 = MAX_SQRT_RATIO - 1
@@ -254,8 +393,9 @@ def test_pool_swap__updates_state_with_exact_output_one_for_zero(
     assert pool_initialized_with_liquidity.state() == state
 
 
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 def test_pool_swap__transfers_funds_with_exact_input_zero_for_one(
-    pool_initialized_with_liquidity,
+    pool_initialized,
     callee,
     sqrt_price_math_lib,
     swap_math_lib,
@@ -263,12 +403,17 @@ def test_pool_swap__transfers_funds_with_exact_input_zero_for_one(
     alice,
     token0,
     token1,
+    init_with_sqrt_price_lower_x96,
 ):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
     state = pool_initialized_with_liquidity.state()
 
-    (reserve0, reserve1) = calc_amounts_from_liquidity_sqrt_price_x96(
-        state.liquidity, state.sqrtPriceX96
+    sqrt_price_lower_x96 = pool_initialized_with_liquidity.sqrtPriceLowerX96()
+    sqrt_price_upper_x96 = pool_initialized_with_liquidity.sqrtPriceUpperX96()
+    (reserve0, reserve1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
     )
+
     amount_specified = 1 * reserve0 // 100  # 1 % of reserves in
     zero_for_one = True
     sqrt_price_limit_x96 = MIN_SQRT_RATIO + 1
@@ -316,8 +461,9 @@ def test_pool_swap__transfers_funds_with_exact_input_zero_for_one(
     assert token1.balanceOf(alice.address) == balance1_alice - amount1
 
 
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 def test_pool_swap__transfers_funds_with_exact_input_one_for_zero(
-    pool_initialized_with_liquidity,
+    pool_initialized,
     callee,
     sqrt_price_math_lib,
     swap_math_lib,
@@ -325,12 +471,17 @@ def test_pool_swap__transfers_funds_with_exact_input_one_for_zero(
     alice,
     token0,
     token1,
+    init_with_sqrt_price_lower_x96,
 ):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
     state = pool_initialized_with_liquidity.state()
 
-    (reserve0, reserve1) = calc_amounts_from_liquidity_sqrt_price_x96(
-        state.liquidity, state.sqrtPriceX96
+    sqrt_price_lower_x96 = pool_initialized_with_liquidity.sqrtPriceLowerX96()
+    sqrt_price_upper_x96 = pool_initialized_with_liquidity.sqrtPriceUpperX96()
+    (reserve0, reserve1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
     )
+
     amount_specified = 1 * reserve1 // 100  # 1 % of reserves in
     zero_for_one = False
     sqrt_price_limit_x96 = MAX_SQRT_RATIO - 1
@@ -378,8 +529,9 @@ def test_pool_swap__transfers_funds_with_exact_input_one_for_zero(
     assert token0.balanceOf(alice.address) == balance0_alice - amount0
 
 
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 def test_pool_swap__transfers_funds_with_exact_output_zero_for_one(
-    pool_initialized_with_liquidity,
+    pool_initialized,
     callee,
     sqrt_price_math_lib,
     swap_math_lib,
@@ -387,12 +539,17 @@ def test_pool_swap__transfers_funds_with_exact_output_zero_for_one(
     alice,
     token0,
     token1,
+    init_with_sqrt_price_lower_x96,
 ):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
     state = pool_initialized_with_liquidity.state()
 
-    (reserve0, reserve1) = calc_amounts_from_liquidity_sqrt_price_x96(
-        state.liquidity, state.sqrtPriceX96
+    sqrt_price_lower_x96 = pool_initialized_with_liquidity.sqrtPriceLowerX96()
+    sqrt_price_upper_x96 = pool_initialized_with_liquidity.sqrtPriceUpperX96()
+    (reserve0, reserve1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
     )
+
     amount_specified = -1 * reserve1 // 100  # 1 % of reserves in
     zero_for_one = True
     sqrt_price_limit_x96 = MIN_SQRT_RATIO + 1
@@ -440,8 +597,9 @@ def test_pool_swap__transfers_funds_with_exact_output_zero_for_one(
     assert token1.balanceOf(alice.address) == balance1_alice - amount1
 
 
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 def test_pool_swap__transfers_funds_with_exact_output_one_for_zero(
-    pool_initialized_with_liquidity,
+    pool_initialized,
     callee,
     sqrt_price_math_lib,
     swap_math_lib,
@@ -449,12 +607,17 @@ def test_pool_swap__transfers_funds_with_exact_output_one_for_zero(
     alice,
     token0,
     token1,
+    init_with_sqrt_price_lower_x96,
 ):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
     state = pool_initialized_with_liquidity.state()
 
-    (reserve0, reserve1) = calc_amounts_from_liquidity_sqrt_price_x96(
-        state.liquidity, state.sqrtPriceX96
+    sqrt_price_lower_x96 = pool_initialized_with_liquidity.sqrtPriceLowerX96()
+    sqrt_price_upper_x96 = pool_initialized_with_liquidity.sqrtPriceUpperX96()
+    (reserve0, reserve1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
     )
+
     amount_specified = -1 * reserve0 // 100  # 1 % of reserves in
     zero_for_one = False
     sqrt_price_limit_x96 = MAX_SQRT_RATIO - 1
@@ -502,8 +665,9 @@ def test_pool_swap__transfers_funds_with_exact_output_one_for_zero(
     assert token0.balanceOf(alice.address) == balance0_alice - amount0
 
 
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 def test_pool_swap__calls_swap_callback_with_exact_input_zero_for_one(
-    pool_initialized_with_liquidity,
+    pool_initialized,
     callee,
     sqrt_price_math_lib,
     swap_math_lib,
@@ -511,12 +675,17 @@ def test_pool_swap__calls_swap_callback_with_exact_input_zero_for_one(
     alice,
     token0,
     token1,
+    init_with_sqrt_price_lower_x96,
 ):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
     state = pool_initialized_with_liquidity.state()
 
-    (reserve0, reserve1) = calc_amounts_from_liquidity_sqrt_price_x96(
-        state.liquidity, state.sqrtPriceX96
+    sqrt_price_lower_x96 = pool_initialized_with_liquidity.sqrtPriceLowerX96()
+    sqrt_price_upper_x96 = pool_initialized_with_liquidity.sqrtPriceUpperX96()
+    (reserve0, reserve1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
     )
+
     amount_specified = 1 * reserve0 // 100  # 1 % of reserves in
     zero_for_one = True
     sqrt_price_limit_x96 = MIN_SQRT_RATIO + 1
@@ -554,8 +723,9 @@ def test_pool_swap__calls_swap_callback_with_exact_input_zero_for_one(
     assert event.sender == sender.address
 
 
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 def test_pool_swap__calls_swap_callback_with_exact_input_one_for_zero(
-    pool_initialized_with_liquidity,
+    pool_initialized,
     callee,
     sqrt_price_math_lib,
     swap_math_lib,
@@ -563,12 +733,17 @@ def test_pool_swap__calls_swap_callback_with_exact_input_one_for_zero(
     alice,
     token0,
     token1,
+    init_with_sqrt_price_lower_x96,
 ):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
     state = pool_initialized_with_liquidity.state()
 
-    (reserve0, reserve1) = calc_amounts_from_liquidity_sqrt_price_x96(
-        state.liquidity, state.sqrtPriceX96
+    sqrt_price_lower_x96 = pool_initialized_with_liquidity.sqrtPriceLowerX96()
+    sqrt_price_upper_x96 = pool_initialized_with_liquidity.sqrtPriceUpperX96()
+    (reserve0, reserve1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
     )
+
     amount_specified = 1 * reserve1 // 100  # 1 % of reserves in
     zero_for_one = False
     sqrt_price_limit_x96 = MAX_SQRT_RATIO - 1
@@ -606,8 +781,9 @@ def test_pool_swap__calls_swap_callback_with_exact_input_one_for_zero(
     assert event.sender == sender.address
 
 
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 def test_pool_swap__calls_swap_callback_with_exact_output_zero_for_one(
-    pool_initialized_with_liquidity,
+    pool_initialized,
     callee,
     sqrt_price_math_lib,
     swap_math_lib,
@@ -615,12 +791,17 @@ def test_pool_swap__calls_swap_callback_with_exact_output_zero_for_one(
     alice,
     token0,
     token1,
+    init_with_sqrt_price_lower_x96,
 ):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
     state = pool_initialized_with_liquidity.state()
 
-    (reserve0, reserve1) = calc_amounts_from_liquidity_sqrt_price_x96(
-        state.liquidity, state.sqrtPriceX96
+    sqrt_price_lower_x96 = pool_initialized_with_liquidity.sqrtPriceLowerX96()
+    sqrt_price_upper_x96 = pool_initialized_with_liquidity.sqrtPriceUpperX96()
+    (reserve0, reserve1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
     )
+
     amount_specified = -1 * reserve1 // 100  # 1 % of reserves out
     zero_for_one = True
     sqrt_price_limit_x96 = MIN_SQRT_RATIO + 1
@@ -658,8 +839,9 @@ def test_pool_swap__calls_swap_callback_with_exact_output_zero_for_one(
     assert event.sender == sender.address
 
 
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 def test_pool_swap__calls_swap_callback_with_exact_output_one_for_zero(
-    pool_initialized_with_liquidity,
+    pool_initialized,
     callee,
     sqrt_price_math_lib,
     swap_math_lib,
@@ -667,12 +849,17 @@ def test_pool_swap__calls_swap_callback_with_exact_output_one_for_zero(
     alice,
     token0,
     token1,
+    init_with_sqrt_price_lower_x96,
 ):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
     state = pool_initialized_with_liquidity.state()
 
-    (reserve0, reserve1) = calc_amounts_from_liquidity_sqrt_price_x96(
-        state.liquidity, state.sqrtPriceX96
+    sqrt_price_lower_x96 = pool_initialized_with_liquidity.sqrtPriceLowerX96()
+    sqrt_price_upper_x96 = pool_initialized_with_liquidity.sqrtPriceUpperX96()
+    (reserve0, reserve1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
     )
+
     amount_specified = -1 * reserve0 // 100  # 1 % of reserves out
     zero_for_one = False
     sqrt_price_limit_x96 = MAX_SQRT_RATIO - 1
@@ -710,8 +897,9 @@ def test_pool_swap__calls_swap_callback_with_exact_output_one_for_zero(
     assert event.sender == sender.address
 
 
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 def test_pool_swap__emits_swap_with_exact_input_zero_for_one(
-    pool_initialized_with_liquidity,
+    pool_initialized,
     callee,
     sqrt_price_math_lib,
     swap_math_lib,
@@ -719,12 +907,17 @@ def test_pool_swap__emits_swap_with_exact_input_zero_for_one(
     alice,
     token0,
     token1,
+    init_with_sqrt_price_lower_x96,
 ):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
     state = pool_initialized_with_liquidity.state()
 
-    (reserve0, reserve1) = calc_amounts_from_liquidity_sqrt_price_x96(
-        state.liquidity, state.sqrtPriceX96
+    sqrt_price_lower_x96 = pool_initialized_with_liquidity.sqrtPriceLowerX96()
+    sqrt_price_upper_x96 = pool_initialized_with_liquidity.sqrtPriceUpperX96()
+    (reserve0, reserve1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
     )
+
     amount_specified = 1 * reserve0 // 100  # 1 % of reserves in
     zero_for_one = True
     sqrt_price_limit_x96 = MIN_SQRT_RATIO + 1
@@ -771,8 +964,9 @@ def test_pool_swap__emits_swap_with_exact_input_zero_for_one(
     assert event.tick == state.tick
 
 
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 def test_pool_swap__emits_swap_with_exact_input_one_for_zero(
-    pool_initialized_with_liquidity,
+    pool_initialized,
     callee,
     sqrt_price_math_lib,
     swap_math_lib,
@@ -780,12 +974,17 @@ def test_pool_swap__emits_swap_with_exact_input_one_for_zero(
     alice,
     token0,
     token1,
+    init_with_sqrt_price_lower_x96,
 ):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
     state = pool_initialized_with_liquidity.state()
 
-    (reserve0, reserve1) = calc_amounts_from_liquidity_sqrt_price_x96(
-        state.liquidity, state.sqrtPriceX96
+    sqrt_price_lower_x96 = pool_initialized_with_liquidity.sqrtPriceLowerX96()
+    sqrt_price_upper_x96 = pool_initialized_with_liquidity.sqrtPriceUpperX96()
+    (reserve0, reserve1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
     )
+
     amount_specified = 1 * reserve1 // 100  # 1 % of reserves in
     zero_for_one = False
     sqrt_price_limit_x96 = MAX_SQRT_RATIO - 1
@@ -831,8 +1030,9 @@ def test_pool_swap__emits_swap_with_exact_input_one_for_zero(
     assert event.tick == state.tick
 
 
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 def test_pool_swap__emits_swap_with_exact_output_zero_for_one(
-    pool_initialized_with_liquidity,
+    pool_initialized,
     callee,
     sqrt_price_math_lib,
     swap_math_lib,
@@ -840,12 +1040,17 @@ def test_pool_swap__emits_swap_with_exact_output_zero_for_one(
     alice,
     token0,
     token1,
+    init_with_sqrt_price_lower_x96,
 ):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
     state = pool_initialized_with_liquidity.state()
 
-    (reserve0, reserve1) = calc_amounts_from_liquidity_sqrt_price_x96(
-        state.liquidity, state.sqrtPriceX96
+    sqrt_price_lower_x96 = pool_initialized_with_liquidity.sqrtPriceLowerX96()
+    sqrt_price_upper_x96 = pool_initialized_with_liquidity.sqrtPriceUpperX96()
+    (reserve0, reserve1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
     )
+
     amount_specified = -1 * reserve1 // 100  # 1 % of reserves out
     zero_for_one = True
     sqrt_price_limit_x96 = MIN_SQRT_RATIO + 1
@@ -891,8 +1096,9 @@ def test_pool_swap__emits_swap_with_exact_output_zero_for_one(
     assert event.tick == state.tick
 
 
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 def test_pool_swap__emits_swap_with_exact_output_one_for_zero(
-    pool_initialized_with_liquidity,
+    pool_initialized,
     callee,
     sqrt_price_math_lib,
     swap_math_lib,
@@ -900,12 +1106,17 @@ def test_pool_swap__emits_swap_with_exact_output_one_for_zero(
     alice,
     token0,
     token1,
+    init_with_sqrt_price_lower_x96,
 ):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
     state = pool_initialized_with_liquidity.state()
 
-    (reserve0, reserve1) = calc_amounts_from_liquidity_sqrt_price_x96(
-        state.liquidity, state.sqrtPriceX96
+    sqrt_price_lower_x96 = pool_initialized_with_liquidity.sqrtPriceLowerX96()
+    sqrt_price_upper_x96 = pool_initialized_with_liquidity.sqrtPriceUpperX96()
+    (reserve0, reserve1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
     )
+
     amount_specified = -1 * reserve0 // 100  # 1 % of reserves out
     zero_for_one = False
     sqrt_price_limit_x96 = MAX_SQRT_RATIO - 1
@@ -951,8 +1162,9 @@ def test_pool_swap__emits_swap_with_exact_output_one_for_zero(
     assert event.tick == state.tick
 
 
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 def test_pool_swap__reverts_when_amount_specified_zero(
-    pool_initialized_with_liquidity,
+    pool_initialized,
     callee,
     sqrt_price_math_lib,
     swap_math_lib,
@@ -960,7 +1172,10 @@ def test_pool_swap__reverts_when_amount_specified_zero(
     alice,
     token0,
     token1,
+    init_with_sqrt_price_lower_x96,
 ):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
+
     zero_for_one = True
     amount_specified = 0
     sqrt_price_limit_x96 = MIN_SQRT_RATIO + 1
@@ -976,8 +1191,9 @@ def test_pool_swap__reverts_when_amount_specified_zero(
         )
 
 
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 def test_pool_swap__reverts_when_sqrt_price_limit_x96_greater_than_sqrt_price_x96_with_zero_for_one(
-    pool_initialized_with_liquidity,
+    pool_initialized,
     callee,
     sqrt_price_math_lib,
     swap_math_lib,
@@ -985,7 +1201,10 @@ def test_pool_swap__reverts_when_sqrt_price_limit_x96_greater_than_sqrt_price_x9
     alice,
     token0,
     token1,
+    init_with_sqrt_price_lower_x96,
 ):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
+
     zero_for_one = True
     amount_specified = 1000000
 
@@ -1003,8 +1222,9 @@ def test_pool_swap__reverts_when_sqrt_price_limit_x96_greater_than_sqrt_price_x9
         )
 
 
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 def test_pool_swap__reverts_when_sqrt_price_limit_x96_less_than_min_sqrt_ratio_with_zero_for_one(
-    pool_initialized_with_liquidity,
+    pool_initialized,
     callee,
     sqrt_price_math_lib,
     swap_math_lib,
@@ -1012,7 +1232,10 @@ def test_pool_swap__reverts_when_sqrt_price_limit_x96_less_than_min_sqrt_ratio_w
     alice,
     token0,
     token1,
+    init_with_sqrt_price_lower_x96,
 ):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
+
     zero_for_one = True
     amount_specified = 1000000
     sqrt_price_limit_x96 = MIN_SQRT_RATIO
@@ -1028,8 +1251,9 @@ def test_pool_swap__reverts_when_sqrt_price_limit_x96_less_than_min_sqrt_ratio_w
         )
 
 
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 def test_pool_swap__reverts_when_sqrt_price_limit_x96_less_than_sqrt_price_x96_with_one_for_zero(
-    pool_initialized_with_liquidity,
+    pool_initialized,
     callee,
     sqrt_price_math_lib,
     swap_math_lib,
@@ -1037,7 +1261,10 @@ def test_pool_swap__reverts_when_sqrt_price_limit_x96_less_than_sqrt_price_x96_w
     alice,
     token0,
     token1,
+    init_with_sqrt_price_lower_x96,
 ):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
+
     zero_for_one = False
     amount_specified = 1000000
 
@@ -1055,8 +1282,9 @@ def test_pool_swap__reverts_when_sqrt_price_limit_x96_less_than_sqrt_price_x96_w
         )
 
 
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 def test_pool_swap__reverts_when_sqrt_price_limit_x96_greater_than_max_sqrt_ratio_with_one_for_zero(
-    pool_initialized_with_liquidity,
+    pool_initialized,
     callee,
     sqrt_price_math_lib,
     swap_math_lib,
@@ -1064,7 +1292,10 @@ def test_pool_swap__reverts_when_sqrt_price_limit_x96_greater_than_max_sqrt_rati
     alice,
     token0,
     token1,
+    init_with_sqrt_price_lower_x96,
 ):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
+
     zero_for_one = False
     amount_specified = 1000000
     sqrt_price_limit_x96 = MAX_SQRT_RATIO
@@ -1080,8 +1311,9 @@ def test_pool_swap__reverts_when_sqrt_price_limit_x96_greater_than_max_sqrt_rati
         )
 
 
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 def test_pool_swap__reverts_when_sqrt_price_x96_next_less_than_sqrt_price_limit_with_zero_for_one(
-    pool_initialized_with_liquidity,
+    pool_initialized,
     callee,
     sqrt_price_math_lib,
     swap_math_lib,
@@ -1089,12 +1321,17 @@ def test_pool_swap__reverts_when_sqrt_price_x96_next_less_than_sqrt_price_limit_
     alice,
     token0,
     token1,
+    init_with_sqrt_price_lower_x96,
 ):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
     state = pool_initialized_with_liquidity.state()
 
-    (reserve0, reserve1) = calc_amounts_from_liquidity_sqrt_price_x96(
-        state.liquidity, state.sqrtPriceX96
+    sqrt_price_lower_x96 = pool_initialized_with_liquidity.sqrtPriceLowerX96()
+    sqrt_price_upper_x96 = pool_initialized_with_liquidity.sqrtPriceUpperX96()
+    (reserve0, reserve1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
     )
+
     amount_specified = -1 * reserve1 // 100  # 1 % of reserves out
     zero_for_one = True
 
@@ -1118,8 +1355,9 @@ def test_pool_swap__reverts_when_sqrt_price_x96_next_less_than_sqrt_price_limit_
         )
 
 
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 def test_pool_swap__reverts_when_sqrt_price_x96_next_greater_than_sqrt_price_limit_with_one_for_zero(
-    pool_initialized_with_liquidity,
+    pool_initialized,
     callee,
     sqrt_price_math_lib,
     swap_math_lib,
@@ -1127,12 +1365,17 @@ def test_pool_swap__reverts_when_sqrt_price_x96_next_greater_than_sqrt_price_lim
     alice,
     token0,
     token1,
+    init_with_sqrt_price_lower_x96,
 ):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
     state = pool_initialized_with_liquidity.state()
 
-    (reserve0, reserve1) = calc_amounts_from_liquidity_sqrt_price_x96(
-        state.liquidity, state.sqrtPriceX96
+    sqrt_price_lower_x96 = pool_initialized_with_liquidity.sqrtPriceLowerX96()
+    sqrt_price_upper_x96 = pool_initialized_with_liquidity.sqrtPriceUpperX96()
+    (reserve0, reserve1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
     )
+
     amount_specified = -1 * reserve0 // 100  # 1 % of reserves out
     zero_for_one = False
 
@@ -1156,9 +1399,231 @@ def test_pool_swap__reverts_when_sqrt_price_x96_next_greater_than_sqrt_price_lim
         )
 
 
-# TODO: callee below min tests
-# TODO: revert when sqrt price next outstand range limit if exact output
-# TODO: test sqrt price next finalizes pool case
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
+def test_pool_swap__reverts_when_sqrt_price_x96_next_less_than_sqrt_price_lower_with_exact_output(
+    pool_initialized,
+    callee,
+    sqrt_price_math_lib,
+    swap_math_lib,
+    range_math_lib,
+    sender,
+    alice,
+    token0,
+    token1,
+    ticks,
+    init_with_sqrt_price_lower_x96,
+):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
+    state = pool_initialized_with_liquidity.state()
+
+    sqrt_price_lower_x96 = pool_initialized_with_liquidity.sqrtPriceLowerX96()
+    sqrt_price_upper_x96 = pool_initialized_with_liquidity.sqrtPriceUpperX96()
+    (reserve0, reserve1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
+    )
+
+    (tick_lower, tick_upper) = ticks
+    tick_next = tick_lower - 100
+    sqrt_price_x96_next = calc_sqrt_price_x96_from_tick(tick_next)
+
+    # swap the pool to initial sqrt price
+    (amount0, amount1) = calc_swap_amounts(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_x96_next
+    )
+    token0.mint(sender.address, amount0, sender=sender)
+
+    amount_specified = amount1  # amount out
+    assert amount_specified < 0
+    zero_for_one = True
+    sqrt_price_limit_x96 = MIN_SQRT_RATIO + 1
+
+    with reverts(range_math_lib.InvalidSqrtPriceX96):
+        callee.swap(
+            pool_initialized_with_liquidity.address,
+            sender.address,
+            zero_for_one,
+            amount_specified,
+            sqrt_price_limit_x96,
+            sender=sender,
+        )
+
+
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
+def test_pool_swap__reverts_when_sqrt_price_x96_next_greater_than_sqrt_price_upper_with_exact_output(
+    pool_initialized,
+    callee,
+    sqrt_price_math_lib,
+    swap_math_lib,
+    range_math_lib,
+    sender,
+    alice,
+    token0,
+    token1,
+    ticks,
+    init_with_sqrt_price_lower_x96,
+):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
+    state = pool_initialized_with_liquidity.state()
+
+    sqrt_price_lower_x96 = pool_initialized_with_liquidity.sqrtPriceLowerX96()
+    sqrt_price_upper_x96 = pool_initialized_with_liquidity.sqrtPriceUpperX96()
+    (reserve0, reserve1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
+    )
+
+    (tick_lower, tick_upper) = ticks
+    tick_next = tick_upper + 100
+    sqrt_price_x96_next = calc_sqrt_price_x96_from_tick(tick_next)
+
+    # swap the pool to initial sqrt price
+    (amount0, amount1) = calc_swap_amounts(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_x96_next
+    )
+    token1.mint(sender.address, amount1, sender=sender)
+
+    amount_specified = amount0  # amount out
+    assert amount_specified < 0
+    zero_for_one = False
+    sqrt_price_limit_x96 = MAX_SQRT_RATIO - 1
+
+    with reverts(range_math_lib.InvalidSqrtPriceX96):
+        callee.swap(
+            pool_initialized_with_liquidity.address,
+            sender.address,
+            zero_for_one,
+            amount_specified,
+            sqrt_price_limit_x96,
+            sender=sender,
+        )
+
+
+def test_pool_swap__reverts_when_pool_finalized(
+    pool_initialized,
+    callee,
+    sqrt_price_math_lib,
+    swap_math_lib,
+    liquidity_math_lib,
+    sender,
+    alice,
+    token0,
+    token1,
+    chain,
+):
+    init_with_sqrt_price_lower_x96 = True
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
+    state = pool_initialized_with_liquidity.state()
+
+    sqrt_price_lower_x96 = pool_initialized_with_liquidity.sqrtPriceLowerX96()
+    sqrt_price_upper_x96 = pool_initialized_with_liquidity.sqrtPriceUpperX96()
+
+    zero_for_one = False
+    sqrt_price_limit_x96 = MAX_SQRT_RATIO - 1
+
+    # calc amounts in/out for the swap with first pass on price thru sqrt price math lib
+    sqrt_price_x96_next = sqrt_price_upper_x96
+    (amount0, amount1) = swap_math_lib.swapAmounts(
+        state.liquidity,
+        state.sqrtPriceX96,
+        sqrt_price_x96_next,
+    )
+    amount_specified = int(amount1 * 1.001)  # extra buffer
+
+    callee.swap(
+        pool_initialized_with_liquidity.address,
+        alice.address,
+        zero_for_one,
+        amount_specified,
+        sqrt_price_limit_x96,
+        sender=sender,
+    )
+    state = pool_initialized_with_liquidity.state()
+    assert state.finalized is True
+
+    # try again with smaller amount specified
+    (reserve0, reserve1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
+    )
+    amount_specified = 1 * reserve1 // 100  # 1 % of reserves in
+
+    with reverts(pool_initialized_with_liquidity.Finalized):
+        callee.swap(
+            pool_initialized_with_liquidity.address,
+            alice.address,
+            zero_for_one,
+            amount_specified,
+            sqrt_price_limit_x96,
+            sender=sender,
+        )
+
+
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
+def test_pool_swap__reverts_when_amount0_transferred_less_than_min_with_zero_for_one(
+    pool_initialized,
+    callee_below_min0,
+    sqrt_price_math_lib,
+    swap_math_lib,
+    sender,
+    alice,
+    token0,
+    token1,
+    init_with_sqrt_price_lower_x96,
+):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
+    state = pool_initialized_with_liquidity.state()
+
+    sqrt_price_lower_x96 = pool_initialized_with_liquidity.sqrtPriceLowerX96()
+    sqrt_price_upper_x96 = pool_initialized_with_liquidity.sqrtPriceUpperX96()
+    (reserve0, reserve1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
+    )
+    amount_specified = -1 * reserve1 // 100  # 1 % of reserves out
+    zero_for_one = True
+    sqrt_price_limit_x96 = MIN_SQRT_RATIO + 1
+
+    with reverts(pool_initialized_with_liquidity.Amount0LessThanMin):
+        callee_below_min0.swap(
+            pool_initialized_with_liquidity.address,
+            alice.address,
+            zero_for_one,
+            amount_specified,
+            sqrt_price_limit_x96,
+            sender=sender,
+        )
+
+
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
+def test_pool_swap__reverts_when_amount1_transferred_less_than_min_with_one_for_zero(
+    pool_initialized,
+    callee_below_min1,
+    sqrt_price_math_lib,
+    swap_math_lib,
+    sender,
+    alice,
+    token0,
+    token1,
+    init_with_sqrt_price_lower_x96,
+):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
+    state = pool_initialized_with_liquidity.state()
+
+    sqrt_price_lower_x96 = pool_initialized_with_liquidity.sqrtPriceLowerX96()
+    sqrt_price_upper_x96 = pool_initialized_with_liquidity.sqrtPriceUpperX96()
+    (reserve0, reserve1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
+    )
+    amount_specified = -1 * reserve0 // 100  # 1 % of reserves out
+    zero_for_one = False
+    sqrt_price_limit_x96 = MAX_SQRT_RATIO - 1
+
+    with reverts(pool_initialized_with_liquidity.Amount1LessThanMin):
+        callee_below_min1.swap(
+            pool_initialized_with_liquidity.address,
+            alice.address,
+            zero_for_one,
+            amount_specified,
+            sqrt_price_limit_x96,
+            sender=sender,
+        )
 
 
 @pytest.mark.fuzzing
@@ -1168,9 +1633,10 @@ def test_pool_swap__reverts_when_sqrt_price_x96_next_greater_than_sqrt_price_lim
         min_value=-(1000000000 - 1), max_value=1000000000000000
     ),
     zero_for_one=st.booleans(),
+    init_with_sqrt_price_lower_x96=st.booleans(),
 )
 def test_pool_swap__with_fuzz(
-    pool_initialized_with_liquidity,
+    pool_initialized,
     callee,
     sqrt_price_math_lib,
     swap_math_lib,
@@ -1180,10 +1646,12 @@ def test_pool_swap__with_fuzz(
     token1,
     amount_specified_pc,
     zero_for_one,
+    init_with_sqrt_price_lower_x96,
     chain,
 ):
     # @dev needed to reset chain state at end of function for each fuzz run
     snapshot = chain.snapshot()
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
 
     # mint large number of tokens to sender to avoid balance issues
     balance0_sender = token0.balanceOf(sender.address)
@@ -1265,8 +1733,10 @@ def test_pool_swap__with_fuzz(
 
     # check pool state transition
     # TODO: also test with protocol fee
-    (reserve0, reserve1) = calc_amounts_from_liquidity_sqrt_price_x96(
-        state.liquidity, state.sqrtPriceX96
+    sqrt_price_lower_x96 = pool_initialized_with_liquidity.sqrtPriceLowerX96()
+    sqrt_price_upper_x96 = pool_initialized_with_liquidity.sqrtPriceUpperX96()
+    (reserve0, reserve1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
     )
 
     # update state price
@@ -1303,8 +1773,11 @@ def test_pool_swap__with_fuzz(
     calc_sqrt_price_x96_next = int(_sqrt_price_x96 * _del_sqrt_price_y)
 
     # add in the fees
-    (_reserve0_next, _reserve1_next) = calc_amounts_from_liquidity_sqrt_price_x96(
-        calc_liquidity_next, calc_sqrt_price_x96_next
+    (_reserve0_next, _reserve1_next) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+        calc_liquidity_next,
+        calc_sqrt_price_x96_next,
+        sqrt_price_lower_x96,
+        sqrt_price_upper_x96,
     )
     (
         _liquidity_after,
@@ -1367,10 +1840,11 @@ def test_pool_swap__with_fuzz(
         min_value=-(1000000000 - 1), max_value=1000000000000000
     ),
     zero_for_one=st.booleans(),
+    init_with_sqrt_price_lower_x96=st.booleans(),
     num_swaps=st.integers(min_value=2, max_value=4),
 )
 def test_pool_swap__multiple_with_fuzz(
-    pool_initialized_with_liquidity,
+    pool_initialized,
     callee,
     sqrt_price_math_lib,
     swap_math_lib,
@@ -1380,11 +1854,13 @@ def test_pool_swap__multiple_with_fuzz(
     token1,
     amount_specified_pc,
     zero_for_one,
+    init_with_sqrt_price_lower_x96,
     num_swaps,
     chain,
 ):
     # @dev needed to reset chain state at end of function for each fuzz run
     snapshot = chain.snapshot()
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
 
     # mint large number of tokens to sender to avoid balance issues
     balance0_sender = token0.balanceOf(sender.address)
@@ -1417,6 +1893,9 @@ def test_pool_swap__multiple_with_fuzz(
         )
 
     amount_specified = amount_specified // num_swaps
+
+    sqrt_price_lower_x96 = pool_initialized_with_liquidity.sqrtPriceLowerX96()
+    sqrt_price_upper_x96 = pool_initialized_with_liquidity.sqrtPriceUpperX96()
 
     # loop over num swaps
     for _ in range(num_swaps):
@@ -1470,8 +1949,11 @@ def test_pool_swap__multiple_with_fuzz(
 
         # check pool state transition
         # TODO: also test with protocol fee
-        (reserve0, reserve1) = calc_amounts_from_liquidity_sqrt_price_x96(
-            state.liquidity, state.sqrtPriceX96
+        (reserve0, reserve1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+            state.liquidity,
+            state.sqrtPriceX96,
+            sqrt_price_lower_x96,
+            sqrt_price_upper_x96,
         )
 
         # update state price
@@ -1509,8 +1991,14 @@ def test_pool_swap__multiple_with_fuzz(
         calc_sqrt_price_x96_next = int(_sqrt_price_x96 * _del_sqrt_price_y)
 
         # add in the fees
-        (_reserve0_next, _reserve1_next) = calc_amounts_from_liquidity_sqrt_price_x96(
-            calc_liquidity_next, calc_sqrt_price_x96_next
+        (
+            _reserve0_next,
+            _reserve1_next,
+        ) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+            calc_liquidity_next,
+            calc_sqrt_price_x96_next,
+            sqrt_price_lower_x96,
+            sqrt_price_upper_x96,
         )
         (
             _liquidity_after,

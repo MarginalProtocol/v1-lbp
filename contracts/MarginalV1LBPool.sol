@@ -296,7 +296,6 @@ contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
             sqrtPriceX96Next = sqrtPriceUpperX96;
 
         // amounts without fees
-        // TODO: check amountSpecified >= amount{1,0} for exact input when clamp
         (amount0, amount1) = SwapMath.swapAmounts(
             _state.liquidity,
             _state.sqrtPriceX96,

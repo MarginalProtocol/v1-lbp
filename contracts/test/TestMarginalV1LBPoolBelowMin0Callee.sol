@@ -1,0 +1,107 @@
+// SPDX-License-Identifier: AGPL-3.0
+pragma solidity 0.8.17;
+
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
+import {IMarginalV1MintCallback} from "@marginal/v1-core/contracts/interfaces/callback/IMarginalV1MintCallback.sol";
+import {IMarginalV1SwapCallback} from "@marginal/v1-core/contracts/interfaces/callback/IMarginalV1SwapCallback.sol";
+
+import {IMarginalV1LBPool} from "../interfaces/IMarginalV1LBPool.sol";
+
+contract TestMarginalV1LBPoolBelowMin0Callee is
+    IMarginalV1MintCallback,
+    IMarginalV1SwapCallback
+{
+    using SafeERC20 for IERC20;
+
+    event MintCallback(
+        uint256 amount0Owed,
+        uint256 amount1Owed,
+        address sender
+    );
+    event SwapCallback(
+        int256 amount0Delta,
+        int256 amount1Delta,
+        address sender
+    );
+
+    function initialize(
+        address pool,
+        uint128 liquidityDelta,
+        uint160 sqrtPriceX96
+    ) external returns (uint256 shares, uint256 amount0, uint256 amount1) {
+        return
+            IMarginalV1LBPool(pool).initialize(
+                liquidityDelta,
+                sqrtPriceX96,
+                abi.encode(msg.sender)
+            );
+    }
+
+    function marginalV1MintCallback(
+        uint256 amount0Owed,
+        uint256 amount1Owed,
+        bytes calldata data
+    ) external {
+        address sender = abi.decode(data, (address));
+
+        emit MintCallback(amount0Owed, amount1Owed, sender);
+
+        if (amount0Owed > 0)
+            IERC20(IMarginalV1LBPool(msg.sender).token0()).safeTransferFrom(
+                sender,
+                msg.sender,
+                amount0Owed - 1
+            );
+        if (amount1Owed > 0)
+            IERC20(IMarginalV1LBPool(msg.sender).token1()).safeTransferFrom(
+                sender,
+                msg.sender,
+                amount1Owed
+            );
+    }
+
+    function swap(
+        address pool,
+        address recipient,
+        bool zeroForOne,
+        int256 amountSpecified,
+        uint160 sqrtPriceLimitX96
+    ) external returns (int256 amount0, int256 amount1) {
+        return
+            IMarginalV1LBPool(pool).swap(
+                recipient,
+                zeroForOne,
+                amountSpecified,
+                sqrtPriceLimitX96,
+                abi.encode(msg.sender)
+            );
+    }
+
+    function marginalV1SwapCallback(
+        int256 amount0Delta,
+        int256 amount1Delta,
+        bytes calldata data
+    ) external {
+        address sender = abi.decode(data, (address));
+
+        emit SwapCallback(amount0Delta, amount1Delta, sender);
+
+        if (amount0Delta > 0) {
+            IERC20(IMarginalV1LBPool(msg.sender).token0()).safeTransferFrom(
+                sender,
+                msg.sender,
+                uint256(amount0Delta) - 1
+            );
+        } else if (amount1Delta > 0) {
+            IERC20(IMarginalV1LBPool(msg.sender).token1()).safeTransferFrom(
+                sender,
+                msg.sender,
+                uint256(amount1Delta)
+            );
+        } else {
+            assert(amount0Delta == 0 && amount1Delta == 0);
+        }
+    }
+}
