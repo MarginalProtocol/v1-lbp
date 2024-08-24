@@ -6,7 +6,9 @@ import {IMarginalV1LBReceiverDeployer} from "../../interfaces/receiver/IMarginal
 import {MockMarginalV1LBReceiver} from "./MockMarginalV1LBReceiver.sol";
 
 contract MockMarginalV1LBReceiverDeployer is IMarginalV1LBReceiverDeployer {
-    mapping(address => address) receivers;
+    mapping(address => address) public receivers;
+
+    event ReceiverDeployed(address indexed pool, bytes data, address receiver);
 
     function deploy(
         address pool,
@@ -20,5 +22,6 @@ contract MockMarginalV1LBReceiverDeployer is IMarginalV1LBReceiverDeployer {
             new MockMarginalV1LBReceiver(pool, token0, token1, data)
         );
         receivers[pool] = receiver;
+        emit ReceiverDeployed(pool, data, receiver);
     }
 }

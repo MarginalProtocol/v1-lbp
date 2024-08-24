@@ -78,7 +78,7 @@ contract MarginalV1LBSupplier is
     }
 
     /// @inheritdoc IMarginalV1LBSupplier
-    function createAndInitializePoolIfNecessary(
+    function createAndInitializePool(
         CreateAndInitializeParams calldata params
     )
         external
@@ -97,78 +97,65 @@ contract MarginalV1LBSupplier is
             params.tokenB,
             params.tickLower,
             params.tickUpper,
-            params.blockTimestampInitialize
+            block.timestamp
         );
-        pool = getPoolAddress(poolKey);
-        receiver = receivers[pool];
+        pool = IMarginalV1LBFactory(factory).createPool(
+            params.tokenA,
+            params.tokenB,
+            params.tickLower,
+            params.tickUpper,
+            address(this),
+            block.timestamp // use current block timestamp
+        );
 
-        // create pool if does not exist yet
-        if (pool == address(0)) {
-            pool = IMarginalV1LBFactory(factory).createPool(
-                params.tokenA,
-                params.tokenB,
-                params.tickLower,
-                params.tickUpper,
-                address(this),
-                block.timestamp // if not yet created, use current block timestamp
-            );
+        // deploy the receiver after creating liquidity bootstrapping pool
+        if (params.receiverDeployer == address(0)) revert InvalidReceiver();
+        // @dev should revert if data not valid
+        receiver = IMarginalV1LBReceiverDeployer(params.receiverDeployer)
+            .deploy(pool, params.receiverData);
+        receivers[pool] = receiver;
 
-            // deploy the receiver after creating liquidity bootstrapping pool
-            if (params.receiverDeployer == address(0)) revert InvalidReceiver();
-            // @dev should revert if data not valid
-            receiver = IMarginalV1LBReceiverDeployer(params.receiverDeployer)
-                .deploy(pool, params.receiverData);
-            receivers[pool] = receiver;
-        }
+        // initialize pool since not initialized yet
+        uint160 sqrtPriceX96 = TickMath.getSqrtRatioAtTick(params.tick);
+        uint160 sqrtPriceLowerX96 = IMarginalV1LBPool(pool).sqrtPriceLowerX96();
+        uint160 sqrtPriceUpperX96 = IMarginalV1LBPool(pool).sqrtPriceUpperX96();
 
-        // initialize pool if not initialized yet
-        (uint160 sqrtPriceX96, , , , , , , ) = IMarginalV1LBPool(pool).state();
-        if (sqrtPriceX96 == 0) {
-            sqrtPriceX96 = TickMath.getSqrtRatioAtTick(params.tick);
-            uint160 sqrtPriceLowerX96 = IMarginalV1LBPool(pool)
-                .sqrtPriceLowerX96();
-            uint160 sqrtPriceUpperX96 = IMarginalV1LBPool(pool)
-                .sqrtPriceUpperX96();
+        // calculate liquidity using range math
+        uint128 liquidity = LiquidityAmounts.getLiquidityForAmounts(
+            sqrtPriceX96,
+            sqrtPriceLowerX96,
+            sqrtPriceUpperX96,
+            sqrtPriceX96 == sqrtPriceLowerX96 ? params.amountDesired : 0, // reserve0
+            sqrtPriceX96 == sqrtPriceLowerX96 ? 0 : params.amountDesired // reserve1
+        );
 
-            // calculate liquidity using range math
-            uint128 liquidity = LiquidityAmounts.getLiquidityForAmounts(
-                sqrtPriceX96,
-                sqrtPriceLowerX96,
-                sqrtPriceUpperX96,
-                sqrtPriceX96 == sqrtPriceLowerX96 ? params.amountDesired : 0, // reserve0
-                sqrtPriceX96 == sqrtPriceLowerX96 ? 0 : params.amountDesired // reserve1
-            );
+        (shares, amount0, amount1) = IMarginalV1LBPool(pool).initialize(
+            liquidity,
+            sqrtPriceX96,
+            abi.encode(MintCallbackData({poolKey: poolKey, payer: msg.sender}))
+        );
 
-            (shares, amount0, amount1) = IMarginalV1LBPool(pool).initialize(
+        // transfer funds to receiver to cover any additional token needed once receive from lbp at finalize
+        (
+            uint256 amount0Receiver,
+            uint256 amount1Receiver
+        ) = IMarginalV1LBReceiver(receiver).seeds(
                 liquidity,
                 sqrtPriceX96,
-                abi.encode(
-                    MintCallbackData({poolKey: poolKey, payer: msg.sender})
-                )
+                sqrtPriceLowerX96,
+                sqrtPriceUpperX96
             );
+        if (amount0Receiver > 0)
+            pay(poolKey.token0, msg.sender, receiver, amount0Receiver);
+        if (amount1Receiver > 0)
+            pay(poolKey.token1, msg.sender, receiver, amount1Receiver);
+        IMarginalV1LBReceiver(receiver).initialize();
 
-            // transfer funds to receiver to cover any additional token needed once receive from lbp at finalize
-            (
-                uint256 amount0Receiver,
-                uint256 amount1Receiver
-            ) = IMarginalV1LBReceiver(receiver).seeds(
-                    liquidity,
-                    sqrtPriceX96,
-                    sqrtPriceLowerX96,
-                    sqrtPriceUpperX96
-                );
-            if (amount0Receiver > 0)
-                pay(poolKey.token0, msg.sender, receiver, amount0Receiver);
-            if (amount1Receiver > 0)
-                pay(poolKey.token1, msg.sender, receiver, amount1Receiver);
-            IMarginalV1LBReceiver(receiver).initialize();
+        amount0 += amount0Receiver;
+        amount1 += amount1Receiver;
 
-            amount0 += amount0Receiver;
-            amount1 += amount1Receiver;
-
-            if (amount0 < params.amount0Min) revert Amount0LessThanMin();
-            if (amount1 < params.amount1Min) revert Amount1LessThanMin();
-        }
+        if (amount0 < params.amount0Min) revert Amount0LessThanMin();
+        if (amount1 < params.amount1Min) revert Amount1LessThanMin();
     }
 
     struct MintCallbackData {
