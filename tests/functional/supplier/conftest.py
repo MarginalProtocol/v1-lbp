@@ -17,7 +17,9 @@ def supplier(project, accounts, factory, univ3_factory_address, WETH9):
     )
 
 
-# TODO: mock receiver deployment
+@pytest.fixture(scope="module")
+def receiver_deployer(project, accounts):
+    return project.MockMarginalV1LBReceiverDeployer.deploy(sender=accounts[0])
 
 
 @pytest.fixture(scope="module")
