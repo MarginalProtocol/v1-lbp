@@ -60,6 +60,17 @@ def WETH9(project, accounts):
 
 
 @pytest.fixture(scope="session")
+def rando_univ3_fee():
+    return 500
+
+
+@pytest.fixture(scope="session")
+def univ3_factory_address():
+    # https://docs.uniswap.org/contracts/v3/reference/deployments
+    return "0x1F98431c8aD98523631AE4a59f267346ea31F984"
+
+
+@pytest.fixture(scope="session")
 def factory(project, accounts):
     deployer = project.MarginalV1LBPoolDeployer.deploy(sender=accounts[0])
     return project.MarginalV1LBFactory.deploy(deployer.address, sender=accounts[0])
