@@ -94,6 +94,32 @@ def calc_liquidity_sqrt_price_x96_from_reserves(
     return (liquidity, sqrt_price_x96)
 
 
+def calc_range_liquidity_from_sqrt_price_x96_amounts(
+    sqrt_price_x96: int,
+    sqrt_price_lower_x96: int,
+    sqrt_price_upper_x96: int,
+    amount0: int,
+    amount1: int,
+):
+    assert sqrt_price_lower_x96 < sqrt_price_upper_x96
+    liquidity = 0
+
+    if sqrt_price_x96 <= sqrt_price_lower_x96:
+        prod0 = (sqrt_price_lower_x96 * sqrt_price_upper_x96) // (1 << 96)
+        liquidity = (amount0 * prod0) // (sqrt_price_upper_x96 - sqrt_price_lower_x96)
+    elif sqrt_price_x96 < sqrt_price_upper_x96:
+        prod0 = (sqrt_price_x96 * sqrt_price_upper_x96) // (1 << 96)
+        liquidity0 = (amount0 * prod0) // (sqrt_price_upper_x96 - sqrt_price_x96)
+        liquidity1 = (amount1 * (1 << 96)) // (sqrt_price_x96 - sqrt_price_lower_x96)
+        liquidity = liquidity0 if liquidity0 < liquidity1 else liquidity1
+    else:
+        liquidity = (amount1 * (1 << 96)) // (
+            sqrt_price_upper_x96 - sqrt_price_lower_x96
+        )
+
+    return liquidity
+
+
 def calc_swap_amounts(
     liquidity: int, sqrt_price_x96: int, sqrt_price_x96_next: int
 ) -> (int, int):
