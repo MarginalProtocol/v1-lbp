@@ -74,12 +74,7 @@ contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
     }
 
     event Initialize(uint128 liquidity, uint160 sqrtPriceX96, int24 tick);
-    event Finalize(
-        uint128 liquidityDelta,
-        uint160 sqrtPriceX96,
-        uint256 amount0,
-        uint256 amount1
-    );
+    event Finalize(uint128 liquidityDelta, uint160 sqrtPriceX96, int24 tick);
     event Swap(
         address indexed sender,
         address indexed recipient,
@@ -101,7 +96,9 @@ contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
         address recipient,
         uint128 liquidityDelta,
         uint256 amount0,
-        uint256 amount1
+        uint256 amount1,
+        uint256 fees0,
+        uint256 fees1
     );
 
     error Locked();
@@ -194,7 +191,9 @@ contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
             uint128 liquidityDelta,
             uint160 sqrtPriceX96,
             uint256 amount0,
-            uint256 amount1
+            uint256 amount1,
+            uint256 fees0,
+            uint256 fees1
         )
     {
         if (msg.sender != supplier) revert Unauthorized();
@@ -204,7 +203,7 @@ contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
         if (_totalSupply == 0) revert SupplyLessThanMin();
 
         // burn liquidity to supplier
-        (liquidityDelta, amount0, amount1) = burn(
+        (liquidityDelta, amount0, amount1, fees0, fees1) = burn(
             address(this),
             msg.sender,
             _totalSupply
@@ -218,7 +217,7 @@ contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
             data
         );
 
-        emit Finalize(liquidityDelta, sqrtPriceX96, amount0, amount1);
+        emit Finalize(liquidityDelta, sqrtPriceX96, state.tick);
     }
 
     function _canExit() internal view returns (bool) {
@@ -429,7 +428,13 @@ contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
     )
         private
         lock
-        returns (uint128 liquidityDelta, uint256 amount0, uint256 amount1)
+        returns (
+            uint128 liquidityDelta,
+            uint256 amount0,
+            uint256 amount1,
+            uint256 fees0,
+            uint256 fees1
+        )
     {
         State memory _state = stateSynced();
         uint256 _totalSupply = totalSupply();
@@ -452,16 +457,18 @@ contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
         _state.liquidity -= liquidityDelta;
 
         // factor in protocol fees taken on burn
-        (uint256 fees0, uint256 fees1) = RangeMath.rangeFees(
+        (fees0, fees1) = RangeMath.rangeFees(
             amount0,
             amount1,
             _state.feeProtocol
         );
+        amount0 -= fees0;
+        amount1 -= fees1;
 
-        if (amount0 > fees0)
-            TransferHelper.safeTransfer(token0, recipient, amount0 - fees0);
-        if (amount1 > fees1)
-            TransferHelper.safeTransfer(token1, recipient, amount1 - fees1);
+        if (amount0 > 0)
+            TransferHelper.safeTransfer(token0, recipient, amount0);
+        if (amount1 > 0)
+            TransferHelper.safeTransfer(token1, recipient, amount1);
 
         if (fees0 > 0) TransferHelper.safeTransfer(token0, factory, fees0);
         if (fees1 > 0) TransferHelper.safeTransfer(token1, factory, fees1);
@@ -474,6 +481,14 @@ contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
 
         _burn(owner, shares);
 
-        emit Burn(owner, recipient, liquidityDelta, amount0, amount1);
+        emit Burn(
+            owner,
+            recipient,
+            liquidityDelta,
+            amount0,
+            amount1,
+            fees0,
+            fees1
+        );
     }
 }

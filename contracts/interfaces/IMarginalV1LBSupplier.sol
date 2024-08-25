@@ -4,10 +4,15 @@ pragma solidity ^0.8.0;
 /// @title The interface for a Marginal v1 liquidity boostrapping pool supplier
 /// @notice Creates and initializes Marginal v1 liquidity bootstrapping pool, supplier necessary liquidity for LBP
 interface IMarginalV1LBSupplier {
-    /// @notice Returns the address of receiver of transferred funds for a liquidity bootrapping pool
-    /// @param pool The liquidity bootstrapping pool transferring the funds
+    /// @notice Returns the address of receiver of transferred funds for a liquidity bootstrapping pool
+    /// @param pool The liquidity bootstrapping pool
     /// @return The address of the receiver of the raised funds from the liquidity bootstrapping pool
     function receivers(address pool) external view returns (address);
+
+    /// @notice Returns the address of finalizer of transferred funds for a liquidity bootstrapping pool
+    /// @param pool The liquidity bootstrapping pool
+    /// @return The address of the finalizer who can early exit from the liquidity bootstrapping pool if necessary after min duration
+    function finalizers(address pool) external view returns (address);
 
     struct CreateAndInitializeParams {
         address tokenA;
@@ -20,6 +25,7 @@ interface IMarginalV1LBSupplier {
         uint256 amount1Min; // minimum amount enforced on sum of pool and receiver amounts
         address receiverDeployer;
         bytes receiverData;
+        address finalizer; // can early exit from pool after min duration
         uint256 deadline;
     }
 
@@ -50,14 +56,17 @@ interface IMarginalV1LBSupplier {
         int24 tickLower;
         int24 tickUpper;
         uint256 blockTimestampInitialize;
+        uint256 deadline;
     }
 
     /// @notice Finalizes an existing liquidity bootstrapping pool, then forwards received funds to recipient stored on initialization
     /// @param params The parameters necessary to finalize a pool, encoded as `FinalizeParams` in calldata
     /// @return liquidityDelta The amount of liquidity burned when finalizing pool
     /// @return sqrtPriceX96 The final price of the pool as a sqrt(token1/token0) Q64.96 value
-    /// @return amount0 The amount of token0 removed from pool reserves when finalizing
-    /// @return amount1 The amount of token1 removed from pool reserves when finalizing
+    /// @return amount0 The amount of token0 forwarded from pool reserves when finalizing
+    /// @return amount1 The amount of token1 forwarded from pool reserves when finalizing
+    /// @return fees0 The amount of token0 sent to factory for protocol fees from pool reserves when finalizing
+    /// @return fees1 The amount of token1 sent to factory for protoocl fees from pool reserves when finalizing
     function finalizePool(
         FinalizeParams calldata params
     )
@@ -66,6 +75,8 @@ interface IMarginalV1LBSupplier {
             uint128 liquidityDelta,
             uint160 sqrtPriceX96,
             uint256 amount0,
-            uint256 amount1
+            uint256 amount1,
+            uint256 fees0,
+            uint256 fees1
         );
 }

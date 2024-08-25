@@ -20,6 +20,7 @@ def test_supplier_create_and_initialize_pool__creates_pool_and_receiver(
     spot_reserve0,
     spot_reserve1,
     sender,
+    alice,
     ticks,
     chain,
     init_with_sqrt_price_lower_x96,
@@ -28,13 +29,14 @@ def test_supplier_create_and_initialize_pool__creates_pool_and_receiver(
     tick = tick_lower if init_with_sqrt_price_lower_x96 else tick_upper
 
     amount_desired = (
-        spot_reserve0 * 1 // 10000
+        (spot_reserve0 * 100) // 10000
         if init_with_sqrt_price_lower_x96
-        else spot_reserve1 * 1 // 10000
+        else (spot_reserve1 * 100) // 10000
     )
     receiver_data = encode(["address"], [sender.address])
     deadline = chain.pending_timestamp + 3600
     timestamp_initialize = chain.pending_timestamp
+    finalizer = alice.address
 
     params = (
         token0.address,
@@ -47,6 +49,7 @@ def test_supplier_create_and_initialize_pool__creates_pool_and_receiver(
         0,  # amount1Min
         receiver_deployer.address,
         receiver_data,
+        finalizer,
         deadline,
     )
     tx = supplier.createAndInitializePool(params, sender=sender)
@@ -67,8 +70,9 @@ def test_supplier_create_and_initialize_pool__creates_pool_and_receiver(
     receiver_address = tx.decode_logs(receiver_deployer.ReceiverDeployed)[0].receiver
     assert receiver_deployer.receivers(pool_address) == receiver_address
 
-    # receiver stored on supplier
+    # receiver and finalizer stored on supplier
     assert supplier.receivers(pool_address) == receiver_address
+    assert supplier.finalizers(pool_address) == alice.address
 
 
 @pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
@@ -81,6 +85,7 @@ def test_supplier_create_and_initialize_pool__initializes_pool_and_receiver(
     spot_reserve0,
     spot_reserve1,
     sender,
+    alice,
     ticks,
     chain,
     init_with_sqrt_price_lower_x96,
@@ -93,12 +98,13 @@ def test_supplier_create_and_initialize_pool__initializes_pool_and_receiver(
     balance1_sender = token1.balanceOf(sender.address)
 
     amount_desired = (
-        spot_reserve0 * 1 // 10000
+        (spot_reserve0 * 100) // 10000
         if init_with_sqrt_price_lower_x96
-        else spot_reserve1 * 1 // 10000
+        else (spot_reserve1 * 100) // 10000
     )
     receiver_data = encode(["address"], [sender.address])
     deadline = chain.pending_timestamp + 3600
+    finalizer = alice.address
 
     params = (
         token0.address,
@@ -111,6 +117,7 @@ def test_supplier_create_and_initialize_pool__initializes_pool_and_receiver(
         0,  # amount1Min
         receiver_deployer.address,
         receiver_data,
+        finalizer,
         deadline,
     )
     tx = supplier.createAndInitializePool(params, sender=sender)
@@ -169,6 +176,8 @@ def test_supplier_create_and_initialize_pool__initializes_pool_and_receiver(
     assert pytest.approx(token0.balanceOf(sender.address), rel=1e-4) == balance0_sender
     assert pytest.approx(token1.balanceOf(sender.address), rel=1e-4) == balance1_sender
 
+    # TODO: fix interface, project issues to check state changes on receiver, pool for initialize calls
+
 
 def test_supplier_create_and_initialize_pool__reverts_when_amount0_less_than_min(
     supplier,
@@ -179,6 +188,7 @@ def test_supplier_create_and_initialize_pool__reverts_when_amount0_less_than_min
     spot_reserve0,
     spot_reserve1,
     sender,
+    alice,
     ticks,
     chain,
 ):
@@ -188,9 +198,9 @@ def test_supplier_create_and_initialize_pool__reverts_when_amount0_less_than_min
     sqrt_price_x96 = calc_sqrt_price_x96_from_tick(tick)
 
     amount_desired = (
-        spot_reserve0 * 1 // 10000
+        (spot_reserve0 * 100) // 10000
         if init_with_sqrt_price_lower_x96
-        else spot_reserve1 * 1 // 10000
+        else (spot_reserve1 * 100) // 10000
     )
     receiver_data = encode(["address"], [sender.address])
     deadline = chain.pending_timestamp + 3600
@@ -231,6 +241,7 @@ def test_supplier_create_and_initialize_pool__reverts_when_amount0_less_than_min
         0,  # amount1Min
         receiver_deployer.address,
         receiver_data,
+        alice.address,  # finalizer
         deadline,
     )
     with reverts(supplier.Amount0LessThanMin):
@@ -246,6 +257,7 @@ def test_supplier_create_and_initialize_pool__reverts_when_amount1_less_than_min
     spot_reserve0,
     spot_reserve1,
     sender,
+    alice,
     ticks,
     chain,
 ):
@@ -254,7 +266,7 @@ def test_supplier_create_and_initialize_pool__reverts_when_amount1_less_than_min
     tick = tick_upper
     sqrt_price_x96 = calc_sqrt_price_x96_from_tick(tick)
 
-    amount_desired = spot_reserve1 * 1 // 10000
+    amount_desired = (spot_reserve1 * 100) // 10000
     receiver_data = encode(["address"], [sender.address])
     deadline = chain.pending_timestamp + 3600
 
@@ -296,6 +308,7 @@ def test_supplier_create_and_initialize_pool__reverts_when_amount1_less_than_min
         amount1_min,  # amount1Min
         receiver_deployer.address,
         receiver_data,
+        alice.address,  # finalizer
         deadline,
     )
     with reverts(supplier.Amount1LessThanMin):

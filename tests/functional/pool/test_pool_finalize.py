@@ -251,6 +251,11 @@ def test_pool_finalize__returns_amounts(
         sqrt_price_upper_x96,
     )
 
+    # factory in protocol fees
+    (fees0, fees1) = range_math_lib.rangeFees(amount0, amount1, state.feeProtocol)
+    amount0 -= fees0
+    amount1 -= fees1
+
     tx = callee.finalize(
         pool_finalized_with_liquidity.address,
         alice.address,
@@ -261,6 +266,8 @@ def test_pool_finalize__returns_amounts(
     assert return_log.sqrtPriceX96 == state.sqrtPriceX96
     assert return_log.amount0 == amount0
     assert return_log.amount1 == amount1
+    assert return_log.fees0 == fees0
+    assert return_log.fees1 == fees1
 
 
 @pytest.mark.parametrize("fee_protocol", [0, 10, 100])
@@ -313,8 +320,7 @@ def test_pool_finalize__emits_finalize(
 
     assert event.liquidityDelta == state.liquidity
     assert event.sqrtPriceX96 == state.sqrtPriceX96
-    assert event.amount0 == amount0
-    assert event.amount1 == amount1
+    assert event.tick == state.tick
 
 
 @pytest.mark.parametrize("fee_protocol", [0, 10, 100])

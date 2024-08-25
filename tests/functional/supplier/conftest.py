@@ -1,5 +1,6 @@
 import pytest
 
+from eth_abi import encode
 from math import sqrt
 
 
@@ -24,16 +25,14 @@ def receiver_deployer(project, accounts):
 
 @pytest.fixture(scope="module")
 def spot_reserve0(pool, token_a, token_b):
-    y = int(4.22468e14)  # e.g. USDC reserves on spot
-    x = int(1.62406e23)  # e.g. WETH reserves on spot
-    return x if pool.token0() == token_a.address else y
+    x = int(4.22468e14)  # e.g. USDC reserves on spot
+    return x
 
 
 @pytest.fixture(scope="module")
 def spot_reserve1(pool, token_a, token_b):
-    y = int(4.22468e14)  # e.g. USDC reserves on spot
-    x = int(1.62406e23)  # e.g. WETH reserves on spot
-    return y if pool.token1() == token_b.address else x
+    y = int(1.62406e23)  # e.g. WETH reserves on spot
+    return y
 
 
 @pytest.fixture(scope="module")
@@ -48,16 +47,77 @@ def sqrt_price_x96_initial(spot_reserve0, spot_reserve1):
 
 
 @pytest.fixture(scope="module")
-def token0(pool, token_a, token_b, sender, supplier, spot_reserve0):
+def token0(pool, token_a, token_b, sender, callee, supplier, spot_reserve0):
     token0 = token_a if pool.token0() == token_a.address else token_b
+    token0.approve(callee.address, 2**256 - 1, sender=sender)
     token0.approve(supplier.address, 2**256 - 1, sender=sender)
     token0.mint(sender.address, spot_reserve0, sender=sender)
     return token0
 
 
 @pytest.fixture(scope="module")
-def token1(pool, token_a, token_b, sender, supplier, spot_reserve1):
+def token1(pool, token_a, token_b, sender, callee, supplier, spot_reserve1):
     token1 = token_b if pool.token1() == token_b.address else token_a
+    token1.approve(callee.address, 2**256 - 1, sender=sender)
     token1.approve(supplier.address, 2**256 - 1, sender=sender)
     token1.mint(sender.address, spot_reserve1, sender=sender)
     return token1
+
+
+@pytest.fixture(scope="module")
+def finalizer(accounts):
+    yield accounts[4]
+
+
+@pytest.fixture(scope="module")
+def receiver_and_pool(
+    project,
+    accounts,
+    factory,
+    supplier,
+    receiver_deployer,
+    sender,
+    finalizer,
+    token0,
+    token1,
+    ticks,
+    spot_reserve0,
+    spot_reserve1,
+    chain,
+):
+    def receiver_and_pool(init_with_sqrt_price_lower_x96: bool):
+        (tick_lower, tick_upper) = ticks
+        tick = tick_lower if init_with_sqrt_price_lower_x96 else tick_upper
+        amount_desired = (
+            (spot_reserve0 * 100) // 10000
+            if init_with_sqrt_price_lower_x96
+            else (spot_reserve1 * 100) // 10000
+        )
+        receiver_data = encode(["address"], [sender.address])
+        deadline = chain.pending_timestamp
+        params = (
+            token0.address,
+            token1.address,
+            tick_lower,
+            tick_upper,
+            tick,
+            amount_desired,
+            0,  # amount0Min
+            0,  # amount1Min
+            receiver_deployer.address,
+            receiver_data,
+            finalizer.address,
+            deadline,
+        )
+        tx = supplier.createAndInitializePool(params, sender=sender)
+
+        pool_address = tx.decode_logs(factory.PoolCreated)[0].pool
+        pool = project.MarginalV1LBPool.at(pool_address)
+
+        receiver_address = tx.decode_logs(receiver_deployer.ReceiverDeployed)[
+            0
+        ].receiver
+        receiver = project.MockMarginalV1LBReceiver.at(receiver_address)
+        return (receiver, pool)
+
+    yield receiver_and_pool

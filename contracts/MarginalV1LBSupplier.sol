@@ -40,6 +40,10 @@ contract MarginalV1LBSupplier is
     /// @inheritdoc IMarginalV1LBSupplier
     mapping(address => address) public receivers;
 
+    /// @inheritdoc IMarginalV1LBSupplier
+    mapping(address => address) public finalizers;
+
+    error Unauthorized();
     error InvalidPool();
     error InvalidReceiver();
     error Amount0LessThanMin();
@@ -107,6 +111,7 @@ contract MarginalV1LBSupplier is
             address(this),
             block.timestamp // use current block timestamp
         );
+        finalizers[pool] = params.finalizer;
 
         // deploy the receiver after creating liquidity bootstrapping pool
         if (params.receiverDeployer == address(0)) revert InvalidReceiver();
@@ -183,11 +188,14 @@ contract MarginalV1LBSupplier is
         FinalizeParams calldata params
     )
         external
+        checkDeadline(params.deadline)
         returns (
             uint128 liquidityDelta,
             uint160 sqrtPriceX96,
             uint256 amount0,
-            uint256 amount1
+            uint256 amount1,
+            uint256 fees0,
+            uint256 fees1
         )
     {
         PoolAddress.PoolKey memory poolKey = getPoolKey(
@@ -203,17 +211,26 @@ contract MarginalV1LBSupplier is
         address receiver = receivers[pool];
         if (receiver == address(0)) revert InvalidReceiver();
 
+        // only allow finalize pool if hit finalize price or is original sender if early exit
+        (, , , , , , , bool finalized) = IMarginalV1LBPool(pool).state();
+        if (!finalized && msg.sender != finalizers[pool]) revert Unauthorized();
+
         // cache balances for check on finalize callback on amounts received
         balance0Cached = balance(poolKey.token0);
         balance1Cached = balance(poolKey.token1);
 
-        (liquidityDelta, sqrtPriceX96, amount0, amount1) = IMarginalV1LBPool(
-            pool
-        ).finalize(
-                abi.encode(
-                    FinalizeCallbackData({poolKey: poolKey, receiver: receiver})
-                )
-            );
+        (
+            liquidityDelta,
+            sqrtPriceX96,
+            amount0,
+            amount1,
+            fees0,
+            fees1
+        ) = IMarginalV1LBPool(pool).finalize(
+            abi.encode(
+                FinalizeCallbackData({poolKey: poolKey, receiver: receiver})
+            )
+        );
     }
 
     struct FinalizeCallbackData {

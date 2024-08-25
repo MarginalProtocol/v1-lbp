@@ -8,16 +8,14 @@ from utils.utils import calc_swap_amounts, calc_sqrt_price_x96_from_tick
 
 @pytest.fixture(scope="module")
 def spot_reserve0(pool, token_a, token_b):
-    y = int(4.22468e14)  # e.g. USDC reserves on spot
-    x = int(1.62406e23)  # e.g. WETH reserves on spot
-    return x if pool.token0() == token_a.address else y
+    x = int(4.22468e14)  # e.g. USDC reserves on spot
+    return x
 
 
 @pytest.fixture(scope="module")
 def spot_reserve1(pool, token_a, token_b):
-    y = int(4.22468e14)  # e.g. USDC reserves on spot
-    x = int(1.62406e23)  # e.g. WETH reserves on spot
-    return y if pool.token1() == token_b.address else x
+    y = int(1.62406e23)  # e.g. WETH reserves on spot
+    return y
 
 
 @pytest.fixture(scope="module")
@@ -52,7 +50,7 @@ def pool_initialized(
     pool, callee, token0, token1, sender, spot_liquidity, sqrt_price_x96_initial, ticks
 ):
     def pool_initialized(init_with_sqrt_price_lower_x96: bool):
-        liquidity_delta = spot_liquidity * 1 // 10000  # 0.01% of spot reserves
+        liquidity_delta = (spot_liquidity * 100) // 10000  # 1% of spot reserves
         sqrt_price_initialize_x96 = (
             pool.sqrtPriceLowerX96()
             if init_with_sqrt_price_lower_x96

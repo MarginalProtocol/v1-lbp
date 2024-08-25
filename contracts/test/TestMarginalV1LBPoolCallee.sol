@@ -39,7 +39,9 @@ contract TestMarginalV1LBPoolCallee is
         uint128 liquidityDelta,
         uint160 sqrtPriceX96,
         uint256 amount0,
-        uint256 amount1
+        uint256 amount1,
+        uint256 fees0,
+        uint256 fees1
     );
     event BurnReturn(uint128 liquidityDelta, uint256 amount0, uint256 amount1);
 
@@ -131,13 +133,27 @@ contract TestMarginalV1LBPoolCallee is
             uint128 liquidityDelta,
             uint160 sqrtPriceX96,
             uint256 amount0,
-            uint256 amount1
+            uint256 amount1,
+            uint256 fees0,
+            uint256 fees1
         )
     {
-        (liquidityDelta, sqrtPriceX96, amount0, amount1) = IMarginalV1LBPool(
-            pool
-        ).finalize(abi.encode(recipient));
-        emit FinalizeReturn(liquidityDelta, sqrtPriceX96, amount0, amount1);
+        (
+            liquidityDelta,
+            sqrtPriceX96,
+            amount0,
+            amount1,
+            fees0,
+            fees1
+        ) = IMarginalV1LBPool(pool).finalize(abi.encode(recipient));
+        emit FinalizeReturn(
+            liquidityDelta,
+            sqrtPriceX96,
+            amount0,
+            amount1,
+            fees0,
+            fees1
+        );
     }
 
     function marginalV1LBFinalizeCallback(

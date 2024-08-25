@@ -92,8 +92,10 @@ interface IMarginalV1LBPool {
     /// @param data Any data to be passed through to the finalize callback
     /// @return liquidityDelta The liquidity removed from the pool
     /// @return sqrtPriceX96 The final price of the pool as a sqrt(token1/token0) Q64.96 value
-    /// @return amount0 The amount of token0 removed from pool reserves
-    /// @return amount1 The amount of token1 removed from pool reserves
+    /// @return amount0 The amount of token0 removed from pool reserves less protocol fees
+    /// @return amount1 The amount of token1 removed from pool reserves less protocol fees
+    /// @return fees0 The amount of token0 taken as protocol fees from pool reserves
+    /// @return fees1 The amount of token1 taken as protocol fees from pool reserves
     function finalize(
         bytes calldata data
     )
@@ -102,7 +104,9 @@ interface IMarginalV1LBPool {
             uint128 liquidityDelta,
             uint160 sqrtPriceX96,
             uint256 amount0,
-            uint256 amount1
+            uint256 amount1,
+            uint256 fees0,
+            uint256 fees1
         );
 
     /// @notice Swap token0 for token1, or token1 for token0
