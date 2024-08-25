@@ -7,9 +7,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {TickMath} from "@uniswap/v3-core/contracts/libraries/TickMath.sol";
 import {IUniswapV3Factory} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
 import {IUniswapV3Pool} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
-
 import {INonfungiblePositionManager as IUniswapV3NonfungiblePositionManager} from "@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol";
-import {Multicall} from "@uniswap/v3-periphery/contracts/base/Multicall.sol";
 
 import {LiquidityMath} from "@marginal/v1-core/contracts/libraries/LiquidityMath.sol";
 import {IMarginalV1Factory} from "@marginal/v1-core/contracts/interfaces/IMarginalV1Factory.sol";
@@ -40,8 +38,7 @@ contract MarginalV1LBLiquidityReceiver is
     MarginalV1LBReceiver,
     PeripheryImmutableState,
     PeripheryPools,
-    PeripheryPayments,
-    Multicall
+    PeripheryPayments
 {
     using SafeERC20 for IERC20;
 
@@ -374,7 +371,6 @@ contract MarginalV1LBLiquidityReceiver is
     /// @inheritdoc IMarginalV1LBLiquidityReceiver
     function mintUniswapV3()
         external
-        payable
         lock
         returns (
             address uniswapV3Pool,
@@ -486,7 +482,6 @@ contract MarginalV1LBLiquidityReceiver is
     /// @inheritdoc IMarginalV1LBLiquidityReceiver
     function mintMarginalV1()
         external
-        payable
         lock
         returns (
             address marginalV1Pool,

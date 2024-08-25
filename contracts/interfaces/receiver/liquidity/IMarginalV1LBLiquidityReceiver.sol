@@ -84,7 +84,6 @@ interface IMarginalV1LBLiquidityReceiver is IMarginalV1LBReceiver {
     /// @return amount1 The amount of token1 used to provide full range liquidity on the Uniswap v3 pool
     function mintUniswapV3()
         external
-        payable
         returns (
             address uniswapV3Pool,
             uint256 tokenId,
@@ -101,7 +100,6 @@ interface IMarginalV1LBLiquidityReceiver is IMarginalV1LBReceiver {
     /// @return amount1 The amount of token1 used to provide liquidity to the Marginal v1 pool
     function mintMarginalV1()
         external
-        payable
         returns (
             address marginalV1Pool,
             uint256 shares,
