@@ -5,7 +5,7 @@ import pytest
 
 
 @pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
-def test_liquidity_receiver_initialize__updates_state(
+def test_liquidity_receiver_initialize__updates_reserves(
     liquidity_receiver_and_pool,
     liquidity_receiver_deployer,
     token0,

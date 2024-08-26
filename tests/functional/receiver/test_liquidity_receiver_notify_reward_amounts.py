@@ -57,7 +57,7 @@ def liquidity_receiver_and_pool_finalized(
 
 @pytest.mark.parametrize("fee_protocol", [0, 10, 100])
 @pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
-def test_liquidity_receiver_notify_reward_amounts__updates_state(
+def test_liquidity_receiver_notify_reward_amounts__updates_reserves(
     factory,
     supplier,
     liquidity_receiver_and_pool_finalized,
