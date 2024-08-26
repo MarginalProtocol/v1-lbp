@@ -431,11 +431,11 @@ contract MarginalV1LBLiquidityReceiver is
         // add liquidity based on lbp price to avoid slippage issues
         IERC20(token0).safeIncreaseAllowance(
             uniswapV3NonfungiblePositionManager,
-            amount0Desired
+            amount0UniswapV3
         );
         IERC20(token1).safeIncreaseAllowance(
             uniswapV3NonfungiblePositionManager,
-            amount1Desired
+            amount1UniswapV3
         );
 
         (
@@ -538,17 +538,18 @@ contract MarginalV1LBLiquidityReceiver is
             // use initializer to create pool and add liquidity
             IERC20(token0).safeIncreaseAllowance(
                 marginalV1PoolInitializer,
-                amount0Desired
+                _reserve0
             );
             IERC20(token1).safeIncreaseAllowance(
                 marginalV1PoolInitializer,
-                amount1Desired
+                _reserve1
             );
 
             // initialize to uniswap v3 sqrt price
             // @dev use uniswap v3 sqrt price to adjust desired amounts for burn via liquidity calculations
             (sqrtPriceX96, , , , , , ) = IUniswapV3Pool(uniswapV3Pool).slot0();
 
+            // TODO: fix logic for liquidity burned? use quoter?
             // liquidity (roughly) contributed to marginal v1 pool ignoring burn
             uint128 liquidityDesired = LiquidityAmounts.getLiquidityForAmounts(
                 sqrtPriceX96,
@@ -601,14 +602,8 @@ contract MarginalV1LBLiquidityReceiver is
             ).marginalV1Router();
 
             // use router to add liquidity
-            IERC20(token0).safeIncreaseAllowance(
-                marginalV1Router,
-                amount0Desired
-            );
-            IERC20(token1).safeIncreaseAllowance(
-                marginalV1Router,
-                amount1Desired
-            );
+            IERC20(token0).safeIncreaseAllowance(marginalV1Router, _reserve0);
+            IERC20(token1).safeIncreaseAllowance(marginalV1Router, _reserve1);
 
             (shares, amount0, amount1) = IMarginalV1Router(marginalV1Router)
                 .addLiquidity(
