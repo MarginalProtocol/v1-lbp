@@ -13,7 +13,7 @@ from utils.utils import calc_sqrt_price_x96_from_tick
 @pytest.mark.parametrize("fee_protocol", [10])
 @pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 @pytest.mark.parametrize("percent_thru_range", [1.0])
-def test_integration_liquidity_receiver_mint_uniswap_v3__updates_reserves(
+def test_integration_liquidity_receiver_mint_uniswap_v3__updates_reserves_when_pool_exists(
     margv1_liquidity_receiver_and_pool_finalized,
     factory,
     sender,
@@ -81,7 +81,7 @@ def test_integration_liquidity_receiver_mint_uniswap_v3__updates_reserves(
 @pytest.mark.parametrize("fee_protocol", [10])
 @pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 @pytest.mark.parametrize("percent_thru_range", [1.0])
-def test_integration_liquidity_receiver_mint_uniswap_v3__stores_pool_info(
+def test_integration_liquidity_receiver_mint_uniswap_v3__stores_pool_info_when_pool_exists(
     margv1_liquidity_receiver_and_pool_finalized,
     factory,
     sender,
@@ -142,7 +142,7 @@ def test_integration_liquidity_receiver_mint_uniswap_v3__stores_pool_info(
 @pytest.mark.parametrize("fee_protocol", [10])
 @pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 @pytest.mark.parametrize("percent_thru_range", [1.0])
-def test_integration_liquidity_receiver_mint_uniswap_v3__mints_uniswap_v3_liquidity(
+def test_integration_liquidity_receiver_mint_uniswap_v3__mints_uniswap_v3_liquidity_when_pool_exists(
     margv1_liquidity_receiver_and_pool_finalized,
     factory,
     sender,
@@ -232,3 +232,82 @@ def test_integration_liquidity_receiver_mint_uniswap_v3__mints_uniswap_v3_liquid
 
     owner_address = univ3_manager.ownerOf(info.tokenId)
     assert owner_address == liquidity_receiver.address
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("fee_protocol", [10])
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
+@pytest.mark.parametrize("percent_thru_range", [1.0])
+def test_integration_liquidity_receiver_mint_uniswap_v3__transfers_funds_when_pool_exists(
+    margv1_liquidity_receiver_and_pool_finalized,
+    factory,
+    sender,
+    alice,
+    admin,
+    finalizer,
+    treasury,
+    chain,
+    univ3_factory,
+    univ3_pool,
+    univ3_manager,
+    margv1_ticks,
+    margv1_receiver_params,
+    margv1_token0,
+    margv1_token1,
+    fee_protocol,
+    percent_thru_range,
+    init_with_sqrt_price_lower_x96,
+):
+    factory.setFeeProtocol(fee_protocol, sender=admin)
+
+    (tick_lower, tick_upper) = margv1_ticks
+    tick_width_2x = tick_upper - tick_lower
+
+    delta = int(tick_width_2x * percent_thru_range)
+    tick = tick_lower + delta if init_with_sqrt_price_lower_x96 else tick_upper - delta
+    sqrt_price_last_x96 = calc_sqrt_price_x96_from_tick(tick)
+
+    (
+        liquidity_receiver,
+        pool_finalized_with_liquidity,
+    ) = margv1_liquidity_receiver_and_pool_finalized(
+        init_with_sqrt_price_lower_x96, sqrt_price_last_x96
+    )
+    assert (
+        pool_finalized_with_liquidity.sqrtPriceInitializeX96() > 0
+    )  # pool initialized
+
+    state = pool_finalized_with_liquidity.state()
+    assert state.feeProtocol == fee_protocol
+    assert pytest.approx(state.sqrtPriceX96, rel=1e-3) == sqrt_price_last_x96
+
+    # cache balances before
+    (balance0_receiver, balance1_receiver) = (
+        margv1_token0.balanceOf(liquidity_receiver.address),
+        margv1_token1.balanceOf(liquidity_receiver.address),
+    )
+    (balance0_univ3_pool, balance1_univ3_pool) = (
+        margv1_token0.balanceOf(univ3_pool.address),
+        margv1_token1.balanceOf(univ3_pool.address),
+    )
+
+    # mint to univ3
+    tx = liquidity_receiver.mintUniswapV3(sender=alice)
+    events = tx.decode_logs(liquidity_receiver.MintUniswapV3)
+    assert len(events) == 1
+    event = events[0]
+
+    amount0 = event.amount0
+    amount1 = event.amount1
+
+    balance0_receiver -= amount0
+    balance1_receiver -= amount1
+
+    balance0_univ3_pool += amount0
+    balance1_univ3_pool += amount1
+
+    assert margv1_token0.balanceOf(liquidity_receiver.address) == balance0_receiver
+    assert margv1_token1.balanceOf(liquidity_receiver.address) == balance1_receiver
+
+    assert margv1_token0.balanceOf(univ3_pool.address) == balance0_univ3_pool
+    assert margv1_token1.balanceOf(univ3_pool.address) == balance1_univ3_pool
