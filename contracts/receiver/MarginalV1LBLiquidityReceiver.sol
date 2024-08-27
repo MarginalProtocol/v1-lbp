@@ -657,6 +657,7 @@ contract MarginalV1LBLiquidityReceiver is
         checkDeadline(info.blockTimestamp, params.lockDuration);
 
         // set tokenId and block timestamp to zero so can't free again
+        uint256 tokenId = info.tokenId;
         info.tokenId = 0;
         info.blockTimestamp = 0;
         uniswapV3PoolInfo = info;
@@ -669,9 +670,9 @@ contract MarginalV1LBLiquidityReceiver is
         // @dev not safeTransferFrom so no ERC721 received needed on recipient
         IUniswapV3NonfungiblePositionManager(
             uniswapV3NonfungiblePositionManager
-        ).transferFrom(address(this), recipient, info.tokenId);
+        ).transferFrom(address(this), recipient, tokenId);
 
-        emit FreeUniswapV3(info.poolAddress, info.tokenId, recipient);
+        emit FreeUniswapV3(info.poolAddress, tokenId, recipient);
     }
 
     /// @inheritdoc IMarginalV1LBLiquidityReceiver
@@ -684,12 +685,13 @@ contract MarginalV1LBLiquidityReceiver is
         checkDeadline(info.blockTimestamp, params.lockDuration);
 
         // set shares and block timestamp to zero so can't free again
+        uint256 shares = info.shares;
         info.shares = 0;
         info.blockTimestamp = 0;
         marginalV1PoolInfo = info;
 
-        pay(info.poolAddress, address(this), recipient, info.shares);
+        pay(info.poolAddress, address(this), recipient, shares);
 
-        emit FreeMarginalV1(info.poolAddress, info.shares, recipient);
+        emit FreeMarginalV1(info.poolAddress, shares, recipient);
     }
 }
