@@ -84,12 +84,14 @@ def margv1_token0(
     sender,
     callee,
     margv1_supplier,
+    margv1_initializer,
     whale,
 ):
     token0 = USDC
     amount0 = token0.balanceOf(whale.address) // 2  # 50% of balance
     token0.approve(callee.address, 2**256 - 1, sender=sender)
     token0.approve(margv1_supplier.address, 2**256 - 1, sender=sender)
+    token0.approve(margv1_initializer.address, 2**256 - 1, sender=sender)
     token0.transfer(sender.address, amount0, sender=whale)
     return token0
 
@@ -103,11 +105,13 @@ def margv1_token1(
     sender,
     callee,
     margv1_supplier,
+    margv1_initializer,
     whale,
 ):
     token1 = WETH9
     amount1 = token1.balanceOf(whale.address) // 2  # 50% of balance
     token1.approve(callee.address, 2**256 - 1, sender=sender)
     token1.approve(margv1_supplier.address, 2**256 - 1, sender=sender)
+    token1.approve(margv1_initializer.address, 2**256 - 1, sender=sender)
     token1.transfer(sender.address, amount1, sender=whale)
     return token1
