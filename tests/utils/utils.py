@@ -16,7 +16,7 @@ def calc_tick_from_sqrt_price_x96(sqrt_price_x96: int) -> int:
 
 
 def calc_sqrt_price_x96_from_tick(tick: int) -> int:
-    return int(sqrt(1.0001**tick)) * (1 << 96)
+    return int(sqrt(1.0001**tick) * (1 << 96))
 
 
 def calc_sqrt_price_x96_next_swap_exact_input(

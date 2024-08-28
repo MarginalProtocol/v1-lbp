@@ -103,7 +103,7 @@ def callee(project, accounts):
 
 @pytest.fixture(scope="session")
 def ticks():
-    tick_width = 2000  # ~50% in price from low to high
+    tick_width = 2000
     tick_mid = 197682  # USDC/WETH tick on spot
     return (tick_mid - tick_width, tick_mid + tick_width)
 

@@ -24,6 +24,11 @@ def USDC(assert_mainnet_fork, Contract):
 
 
 @pytest.fixture(scope="module")
+def TTOKEN(assert_mainnet_fork, Contract):
+    return Contract("0x2abA156fFb8BD5cCaD8C1b7DaaBC3Aa532dfC120")
+
+
+@pytest.fixture(scope="module")
 def univ3_factory(assert_mainnet_fork, univ3_factory_address, Contract):
     return Contract(univ3_factory_address)
 
@@ -76,6 +81,13 @@ def margv1_ticks(
 
 
 @pytest.fixture(scope="module")
+def another_margv1_ticks(assert_mainnet_fork):
+    tick_width = 2000
+    tick_mid = -82944  # TEST/WETH tick on spot
+    return (tick_mid - tick_width, tick_mid + tick_width)
+
+
+@pytest.fixture(scope="module")
 def margv1_token0(
     assert_mainnet_fork,
     univ3_pool,
@@ -115,3 +127,25 @@ def margv1_token1(
     token1.approve(margv1_initializer.address, 2**256 - 1, sender=sender)
     token1.transfer(sender.address, amount1, sender=whale)
     return token1
+
+
+@pytest.fixture(scope="module")
+def another_margv1_token0(
+    assert_mainnet_fork,
+    univ3_pool,
+    WETH9,
+    USDC,
+    TTOKEN,
+    sender,
+    callee,
+    margv1_supplier,
+    margv1_initializer,
+    whale,
+):
+    token0 = TTOKEN
+    amount0 = token0.balanceOf(whale.address) // 2  # 50% of balance
+    token0.approve(callee.address, 2**256 - 1, sender=sender)
+    token0.approve(margv1_supplier.address, 2**256 - 1, sender=sender)
+    token0.approve(margv1_initializer.address, 2**256 - 1, sender=sender)
+    token0.transfer(sender.address, amount0, sender=whale)
+    return token0

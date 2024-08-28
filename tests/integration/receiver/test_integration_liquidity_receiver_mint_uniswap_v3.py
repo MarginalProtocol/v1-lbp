@@ -1,5 +1,6 @@
 import pytest
 
+from ape.utils import ZERO_ADDRESS
 from utils.constants import MAX_TICK
 from utils.utils import calc_sqrt_price_x96_from_tick
 
@@ -75,6 +76,91 @@ def test_integration_liquidity_receiver_mint_uniswap_v3__updates_reserves_when_p
     liquidity_receiver.mintUniswapV3(sender=alice)
     assert liquidity_receiver.reserve0() == reserve0
     assert liquidity_receiver.reserve1() == reserve1
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("fee_protocol", [10])
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
+@pytest.mark.parametrize("percent_thru_range", [1.0])
+def test_integration_liquidity_receiver_mint_uniswap_v3__creates_pool_when_pool_not_exists(
+    another_margv1_liquidity_receiver_and_pool_finalized,
+    factory,
+    sender,
+    alice,
+    admin,
+    finalizer,
+    treasury,
+    chain,
+    univ3_factory,
+    univ3_pool,
+    univ3_manager,
+    another_margv1_ticks,
+    another_margv1_receiver_params,
+    another_margv1_token0,
+    margv1_token1,
+    fee_protocol,
+    percent_thru_range,
+    init_with_sqrt_price_lower_x96,
+    accounts,
+):
+    factory.setFeeProtocol(fee_protocol, sender=admin)
+
+    (tick_lower, tick_upper) = another_margv1_ticks
+    tick_width_2x = tick_upper - tick_lower
+
+    delta = int(tick_width_2x * percent_thru_range)
+    tick = tick_lower + delta if init_with_sqrt_price_lower_x96 else tick_upper - delta
+    sqrt_price_last_x96 = calc_sqrt_price_x96_from_tick(tick)
+
+    (
+        liquidity_receiver,
+        pool_finalized_with_liquidity,
+    ) = another_margv1_liquidity_receiver_and_pool_finalized(
+        init_with_sqrt_price_lower_x96, sqrt_price_last_x96
+    )
+    assert (
+        pool_finalized_with_liquidity.sqrtPriceInitializeX96() > 0
+    )  # pool initialized
+
+    state = pool_finalized_with_liquidity.state()
+    assert state.feeProtocol == fee_protocol
+    assert pytest.approx(state.sqrtPriceX96, rel=1e-3) == sqrt_price_last_x96
+
+    liquidity_receiver_params = liquidity_receiver.receiverParams()
+    assert liquidity_receiver_params == another_margv1_receiver_params
+
+    # check fee tier exists and no pool at fee tier
+    assert (
+        univ3_factory.getPool(
+            another_margv1_token0.address,
+            margv1_token1.address,
+            liquidity_receiver_params.uniswapV3Fee,
+        )
+        == ZERO_ADDRESS
+    )
+
+    # mint to univ3
+    tx = liquidity_receiver.mintUniswapV3(sender=alice)
+    events = tx.decode_logs(univ3_factory.PoolCreated)
+    assert len(events) == 1
+    event = events[0]
+    univ3_pool_address = event.pool
+
+    # check pool created with initial price set to lbp pool price
+    events = tx.decode_logs(univ3_pool.Initialize)
+    assert len(events) == 1
+    event = events[0]
+    assert event.sqrtPriceX96 == state.sqrtPriceX96
+
+    # check pool at fee tier now
+    assert (
+        univ3_factory.getPool(
+            another_margv1_token0.address,
+            margv1_token1.address,
+            liquidity_receiver_params.uniswapV3Fee,
+        )
+        == univ3_pool_address
+    )
 
 
 @pytest.mark.integration
