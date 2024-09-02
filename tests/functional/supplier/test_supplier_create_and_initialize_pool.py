@@ -127,8 +127,11 @@ def test_supplier_create_and_initialize_pool__initializes_pool_and_receiver(
 
     amount0_pool = amount_desired if init_with_sqrt_price_lower_x96 else 0
     amount1_pool = 0 if init_with_sqrt_price_lower_x96 else amount_desired
-    amount0_pool += 1  # mint does a rough round up when adding liquidity
-    amount1_pool += 1
+
+    if init_with_sqrt_price_lower_x96:
+        amount0_pool += 1
+    else:
+        amount1_pool += 1  # mint does a rough round up when adding liquidity
 
     assert pytest.approx(token0.balanceOf(pool_address), rel=1e-4) == amount0_pool
     assert pytest.approx(token1.balanceOf(pool_address), rel=1e-4) == amount1_pool
@@ -226,8 +229,10 @@ def test_supplier_create_and_initialize_pool__refunds_ETH_with_WETH9(
 
     amount0_pool = amount_desired if init_with_sqrt_price_lower_x96 else 0
     amount1_pool = 0 if init_with_sqrt_price_lower_x96 else amount_desired
-    amount0_pool += 1  # mint does a rough round up when adding liquidity
-    amount1_pool += 1
+    if init_with_sqrt_price_lower_x96:
+        amount0_pool += 1
+    else:
+        amount1_pool += 1  # mint does a rough round up when adding liquidity
 
     liquidity = calc_range_liquidity_from_sqrt_price_x96_amounts(
         sqrt_price_x96,
