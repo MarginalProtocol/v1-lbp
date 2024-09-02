@@ -33,7 +33,7 @@ contract MarginalV1LBFactory is IMarginalV1LBFactory {
         address indexed token1,
         int24 tickLower,
         int24 tickUpper,
-        address supplier,
+        address indexed supplier,
         uint256 blockTimestampInitialize,
         address pool
     );
