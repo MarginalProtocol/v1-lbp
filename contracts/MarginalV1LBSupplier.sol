@@ -37,6 +37,7 @@ contract MarginalV1LBSupplier is
 
     error Unauthorized();
     error InvalidPool();
+    error InvalidFinalizer();
     error InvalidReceiver();
     error Amount0LessThanMin();
     error Amount1LessThanMin();
@@ -103,6 +104,7 @@ contract MarginalV1LBSupplier is
             address(this),
             block.timestamp // use current block timestamp
         );
+        if (params.finalizer == address(0)) revert InvalidFinalizer();
         finalizers[pool] = params.finalizer;
 
         // deploy the receiver after creating liquidity bootstrapping pool
