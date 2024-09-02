@@ -962,6 +962,7 @@ def test_pool_swap__emits_swap_with_exact_input_zero_for_one(
     assert event.sqrtPriceX96 == state.sqrtPriceX96
     assert event.liquidity == state.liquidity
     assert event.tick == state.tick
+    assert event.finalized == state.finalized
 
 
 @pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])

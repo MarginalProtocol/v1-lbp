@@ -81,7 +81,8 @@ contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
         int256 amount1,
         uint160 sqrtPriceX96,
         uint128 liquidity,
-        int24 tick
+        int24 tick,
+        bool finalized
     );
     event Mint(
         address sender,
@@ -353,7 +354,8 @@ contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
             amount1,
             _state.sqrtPriceX96,
             _state.liquidity,
-            _state.tick
+            _state.tick,
+            _state.finalized
         );
     }
 
