@@ -317,7 +317,6 @@ contract MarginalV1LBLiquidityReceiver is
         (, , , , , , , bool finalized) = IMarginalV1LBPool(pool).state();
         if (!finalized) revert PoolNotFinalized();
 
-        // only support tokens with standard ERC20 transfer
         (uint256 _reserve0, uint256 _reserve1) = (reserve0, reserve1);
         if (_reserve0 + amount0 > balance(token0)) revert Amount0LessThanMin();
         if (_reserve1 + amount1 > balance(token1)) revert Amount1LessThanMin();

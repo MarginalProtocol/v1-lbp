@@ -386,8 +386,7 @@ def test_pool_finalize__reverts_when_not_supplier(
     assert pool_finalized_with_liquidity.supplier() != sender.address
 
     with reverts(pool_finalized_with_liquidity.Unauthorized):
-        data = HexBytes("")
-        pool_finalized_with_liquidity.finalize(data, sender=sender)
+        pool_finalized_with_liquidity.finalize(alice.address, sender=sender)
 
 
 @pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity =0.8.15;
 
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 import {TickMath} from "@uniswap/v3-core/contracts/libraries/TickMath.sol";
 import {LiquidityAmounts} from "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
 import {PeripheryValidation} from "@uniswap/v3-periphery/contracts/base/PeripheryValidation.sol";
@@ -14,7 +16,6 @@ import {RangeMath} from "./libraries/RangeMath.sol";
 import {PeripheryImmutableState} from "./base/PeripheryImmutableState.sol";
 import {PeripheryPayments} from "./base/PeripheryPayments.sol";
 
-import {IMarginalV1LBFinalizeCallback} from "./interfaces/callback/IMarginalV1LBFinalizeCallback.sol";
 import {IMarginalV1LBReceiverDeployer} from "./interfaces/receiver/IMarginalV1LBReceiverDeployer.sol";
 
 import {IMarginalV1LBReceiver} from "./interfaces/receiver/IMarginalV1LBReceiver.sol";
@@ -25,18 +26,11 @@ import {IMarginalV1LBSupplier} from "./interfaces/IMarginalV1LBSupplier.sol";
 contract MarginalV1LBSupplier is
     IMarginalV1LBSupplier,
     IMarginalV1MintCallback,
-    IMarginalV1LBFinalizeCallback,
     PeripheryImmutableState,
     PeripheryPayments,
     PeripheryValidation,
     Multicall
 {
-    uint256 private constant DEFAULT_BALANCE_CACHED = type(uint256).max;
-
-    /// @dev Transient storage variables used for computing amounts received on finalize callback
-    uint256 private balance0Cached = DEFAULT_BALANCE_CACHED;
-    uint256 private balance1Cached = DEFAULT_BALANCE_CACHED;
-
     /// @inheritdoc IMarginalV1LBSupplier
     mapping(address => address) public receivers;
 
@@ -218,9 +212,9 @@ contract MarginalV1LBSupplier is
         (, , , , , , , bool finalized) = IMarginalV1LBPool(pool).state();
         if (!finalized && msg.sender != finalizers[pool]) revert Unauthorized();
 
-        // cache balances for check on finalize callback on amounts received
-        balance0Cached = balance(poolKey.token0);
-        balance1Cached = balance(poolKey.token1);
+        // cache balances of receiver prior
+        uint256 balance0 = IERC20(poolKey.token0).balanceOf(receiver);
+        uint256 balance1 = IERC20(poolKey.token1).balanceOf(receiver);
 
         (
             liquidityDelta,
@@ -229,62 +223,14 @@ contract MarginalV1LBSupplier is
             amount1,
             fees0,
             fees1
-        ) = IMarginalV1LBPool(pool).finalize(
-            abi.encode(
-                FinalizeCallbackData({poolKey: poolKey, receiver: receiver})
-            )
-        );
-    }
+        ) = IMarginalV1LBPool(pool).finalize(receiver);
 
-    struct FinalizeCallbackData {
-        PoolAddress.PoolKey poolKey;
-        address receiver;
-    }
-
-    /// @inheritdoc IMarginalV1LBFinalizeCallback
-    function marginalV1LBFinalizeCallback(
-        uint256 amount0Transferred,
-        uint256 amount1Transferred,
-        bytes calldata data
-    ) external {
-        FinalizeCallbackData memory decoded = abi.decode(
-            data,
-            (FinalizeCallbackData)
-        );
-        CallbackValidation.verifyCallback(factory, decoded.poolKey);
-
-        // only support tokens with standard ERC20 transfer
-        if (
-            balance0Cached + amount0Transferred >
-            balance(decoded.poolKey.token0)
-        ) revert Amount0LessThanMin();
-        if (
-            balance1Cached + amount1Transferred >
-            balance(decoded.poolKey.token1)
-        ) revert Amount1LessThanMin();
-
-        if (amount0Transferred > 0)
-            pay(
-                decoded.poolKey.token0,
-                address(this),
-                decoded.receiver,
-                amount0Transferred
-            );
-        if (amount1Transferred > 0)
-            pay(
-                decoded.poolKey.token1,
-                address(this),
-                decoded.receiver,
-                amount1Transferred
-            );
-
-        IMarginalV1LBReceiver(decoded.receiver).notifyRewardAmounts(
-            amount0Transferred,
-            amount1Transferred
-        );
-
-        // reset balances cached
-        balance0Cached = DEFAULT_BALANCE_CACHED;
-        balance1Cached = DEFAULT_BALANCE_CACHED;
+        // let receiver know of forwarded funds
+        // @dev _amount{0,1} accounts for any non standard ERC20 behavior via balance diffs
+        uint256 _amount0 = IERC20(poolKey.token0).balanceOf(receiver) -
+            balance0;
+        uint256 _amount1 = IERC20(poolKey.token1).balanceOf(receiver) -
+            balance1;
+        IMarginalV1LBReceiver(receiver).notifyRewardAmounts(_amount0, _amount1);
     }
 }

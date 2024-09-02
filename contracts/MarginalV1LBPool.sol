@@ -18,7 +18,6 @@ import {IMarginalV1SwapCallback} from "@marginal/v1-core/contracts/interfaces/ca
 
 import {RangeMath} from "./libraries/RangeMath.sol";
 
-import {IMarginalV1LBFinalizeCallback} from "./interfaces/callback/IMarginalV1LBFinalizeCallback.sol";
 import {IMarginalV1LBFactory} from "./interfaces/IMarginalV1LBFactory.sol";
 import {IMarginalV1LBPool} from "./interfaces/IMarginalV1LBPool.sol";
 
@@ -184,7 +183,7 @@ contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
 
     /// @inheritdoc IMarginalV1LBPool
     function finalize(
-        bytes calldata data
+        address recipient
     )
         external
         returns (
@@ -205,17 +204,10 @@ contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
         // burn liquidity to supplier
         (liquidityDelta, amount0, amount1, fees0, fees1) = burn(
             address(this),
-            msg.sender,
+            recipient,
             _totalSupply
         );
-
-        // notify supplier of funds transferred on burn
         sqrtPriceX96 = state.sqrtPriceX96;
-        IMarginalV1LBFinalizeCallback(msg.sender).marginalV1LBFinalizeCallback(
-            amount0,
-            amount1,
-            data
-        );
 
         emit Finalize(liquidityDelta, sqrtPriceX96, state.tick);
     }
