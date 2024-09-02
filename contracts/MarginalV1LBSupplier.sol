@@ -161,6 +161,9 @@ contract MarginalV1LBSupplier is
 
         if (amount0 < params.amount0Min) revert Amount0LessThanMin();
         if (amount1 < params.amount1Min) revert Amount1LessThanMin();
+
+        // refund any excess ETH to sender at end of function to avoid re-entrancy with fallback
+        refundETH();
     }
 
     struct MintCallbackData {
