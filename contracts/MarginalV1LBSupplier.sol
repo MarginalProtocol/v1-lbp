@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity =0.8.15;
 
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-
 import {TickMath} from "@uniswap/v3-core/contracts/libraries/TickMath.sol";
 import {LiquidityAmounts} from "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
 import {PeripheryValidation} from "@uniswap/v3-periphery/contracts/base/PeripheryValidation.sol";
@@ -212,10 +210,6 @@ contract MarginalV1LBSupplier is
         (, , , , , , , bool finalized) = IMarginalV1LBPool(pool).state();
         if (!finalized && msg.sender != finalizers[pool]) revert Unauthorized();
 
-        // cache balances of receiver prior
-        uint256 balance0 = IERC20(poolKey.token0).balanceOf(receiver);
-        uint256 balance1 = IERC20(poolKey.token1).balanceOf(receiver);
-
         (
             liquidityDelta,
             sqrtPriceX96,
@@ -225,12 +219,8 @@ contract MarginalV1LBSupplier is
             fees1
         ) = IMarginalV1LBPool(pool).finalize(receiver);
 
-        // let receiver know of forwarded funds
-        // @dev _amount{0,1} accounts for any non standard ERC20 behavior via balance diffs
-        uint256 _amount0 = IERC20(poolKey.token0).balanceOf(receiver) -
-            balance0;
-        uint256 _amount1 = IERC20(poolKey.token1).balanceOf(receiver) -
-            balance1;
-        IMarginalV1LBReceiver(receiver).notifyRewardAmounts(_amount0, _amount1);
+        // notify receiver of forwarded funds
+        // @dev only supports tokens with standard ERC20 transfer
+        IMarginalV1LBReceiver(receiver).notifyRewardAmounts(amount0, amount1);
     }
 }
