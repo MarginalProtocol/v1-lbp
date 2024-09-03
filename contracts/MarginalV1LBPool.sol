@@ -276,7 +276,6 @@ contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
         ) revert SqrtPriceX96ExceedsLimit();
 
         // clamp if exceeds lower or upper range limits
-        // @dev no need to revert on exact input as trader pays more than necessary
         bool clamped;
         if (
             !exactInput &&

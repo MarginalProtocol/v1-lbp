@@ -96,6 +96,7 @@ contract MarginalV1LBLiquidityReceiver is
         _;
         unlocked = 2;
     }
+    uint256 private uninitialized = 2;
 
     event Initialize(uint256 reserve0, uint256 reserve1);
     event RewardsAdded(
@@ -230,8 +231,8 @@ contract MarginalV1LBLiquidityReceiver is
         bool _zeroForOne = (sqrtPriceInitializeX96 == sqrtPriceLowerX96);
         zeroForOne = _zeroForOne;
 
+        if (uninitialized == 1) revert Initialized();
         (uint256 _reserve0, uint256 _reserve1) = (reserve0, reserve1);
-        if (_reserve0 > 0 || _reserve1 > 0) revert Initialized();
 
         // calculate amount{0,1}Owed for reserves in case where need most tokens of hitting finalize price
         (, , uint128 liquidity, , , , , ) = IMarginalV1LBPool(pool).state();
@@ -249,7 +250,9 @@ contract MarginalV1LBLiquidityReceiver is
 
         reserve0 = _reserve0;
         reserve1 = _reserve1;
+
         unlocked = 2;
+        uninitialized = 1;
 
         emit Initialize(_reserve0, _reserve1);
     }
@@ -406,13 +409,6 @@ contract MarginalV1LBLiquidityReceiver is
         uint256 amount0UniswapV3 = (_reserve0 * params.uniswapV3Ratio) / 1e6;
         uint256 amount1UniswapV3 = (_reserve1 * params.uniswapV3Ratio) / 1e6;
 
-        _reserve0 -= amount0UniswapV3;
-        _reserve1 -= amount1UniswapV3;
-
-        // update reserves
-        reserve0 = _reserve0;
-        reserve1 = _reserve1;
-
         // @dev lbp price used for amounts desired, capped by token acquired from lbp
         // initialize should transfer in worst case excess of amounts{0,1}Desired vs reserves{0,1} prior to minting
         (uint256 amount0Desired, uint256 amount1Desired) = getAmountsDesired(
@@ -460,6 +456,15 @@ contract MarginalV1LBLiquidityReceiver is
                 })
             );
 
+        // @dev amount{0,1} <= amount{0,1}UniswapV3 for all sqrt(P)
+        _reserve0 -= amount0;
+        _reserve1 -= amount1;
+
+        // update reserves
+        reserve0 = _reserve0;
+        reserve1 = _reserve1;
+
+        // store univ3 pool info
         uniswapV3PoolInfo = PoolInfo({
             blockTimestamp: _blockTimestamp(),
             poolAddress: uniswapV3Pool,
@@ -500,10 +505,6 @@ contract MarginalV1LBLiquidityReceiver is
 
         if (marginalV1PoolInfo.blockTimestamp > 0) revert LiquidityAdded();
         marginalV1PoolInfo.blockTimestamp = _blockTimestamp(); // store here first to avoid re-entrancy issues
-
-        // set reserves to zero
-        reserve0 = 0;
-        reserve1 = 0;
 
         marginalV1Pool = getMarginalV1Pool(
             token0,
@@ -636,6 +637,11 @@ contract MarginalV1LBLiquidityReceiver is
         if (balance1 > 0)
             pay(token1, address(this), params.treasuryAddress, balance1);
 
+        // set reserves to zero
+        reserve0 = 0;
+        reserve1 = 0;
+
+        // store margv1 pool info
         marginalV1PoolInfo = PoolInfo({
             blockTimestamp: _blockTimestamp(),
             poolAddress: marginalV1Pool,
