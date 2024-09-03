@@ -277,15 +277,19 @@ contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
 
         // clamp if exceeds lower or upper range limits
         // @dev no need to revert on exact input as trader pays more than necessary
+        bool clamped;
         if (
             !exactInput &&
             (sqrtPriceX96Next < sqrtPriceLowerX96 ||
                 sqrtPriceX96Next > sqrtPriceUpperX96)
         ) revert RangeMath.InvalidSqrtPriceX96();
-        else if (sqrtPriceX96Next < sqrtPriceLowerX96)
+        else if (sqrtPriceX96Next < sqrtPriceLowerX96) {
             sqrtPriceX96Next = sqrtPriceLowerX96;
-        else if (sqrtPriceX96Next > sqrtPriceUpperX96)
+            clamped = true;
+        } else if (sqrtPriceX96Next > sqrtPriceUpperX96) {
             sqrtPriceX96Next = sqrtPriceUpperX96;
+            clamped = true;
+        }
 
         // amounts without fees
         (amount0, amount1) = SwapMath.swapAmounts(
@@ -297,7 +301,7 @@ contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
         // optimistic amount out with callback for amount in
         if (!zeroForOne) {
             amount0 = !exactInput ? amountSpecified : amount0; // in case of rounding issues
-            amount1 = exactInput ? amountSpecified : amount1;
+            amount1 = exactInput && !clamped ? amountSpecified : amount1;
 
             if (amount0 < 0)
                 TransferHelper.safeTransfer(
@@ -319,7 +323,7 @@ contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
             _state.tick = TickMath.getTickAtSqrtRatio(sqrtPriceX96Next);
         } else {
             amount1 = !exactInput ? amountSpecified : amount1; // in case of rounding issues
-            amount0 = exactInput ? amountSpecified : amount0;
+            amount0 = exactInput && !clamped ? amountSpecified : amount0;
 
             if (amount1 < 0)
                 TransferHelper.safeTransfer(
