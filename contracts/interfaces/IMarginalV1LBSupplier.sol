@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0
 pragma solidity ^0.8.0;
 
+import {IPeripheryImmutableState} from "./IPeripheryImmutableState.sol";
+
 /// @title The interface for a Marginal v1 liquidity boostrapping pool supplier
 /// @notice Creates and initializes Marginal v1 liquidity bootstrapping pool, supplier necessary liquidity for LBP
-interface IMarginalV1LBSupplier {
+interface IMarginalV1LBSupplier is IPeripheryImmutableState {
     /// @notice Returns the address of receiver of transferred funds for a liquidity bootstrapping pool
     /// @param pool The liquidity bootstrapping pool
     /// @return The address of the receiver of the raised funds from the liquidity bootstrapping pool

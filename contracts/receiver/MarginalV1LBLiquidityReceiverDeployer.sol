@@ -4,12 +4,18 @@ pragma solidity =0.8.15;
 import {MarginalV1LBLiquidityReceiver} from "./MarginalV1LBLiquidityReceiver.sol";
 
 import {IMarginalV1LBPool} from "../interfaces/IMarginalV1LBPool.sol";
+import {IMarginalV1LBSupplier} from "../interfaces/IMarginalV1LBSupplier.sol";
 import {IMarginalV1LBReceiverDeployer} from "../interfaces/receiver/IMarginalV1LBReceiverDeployer.sol";
 import {IMarginalV1LBLiquidityReceiverDeployer} from "../interfaces/receiver/liquidity/IMarginalV1LBLiquidityReceiverDeployer.sol";
 
 contract MarginalV1LBLiquidityReceiverDeployer is
     IMarginalV1LBLiquidityReceiverDeployer
 {
+    /// @inheritdoc IMarginalV1LBLiquidityReceiverDeployer
+    address public immutable supplier;
+    /// @inheritdoc IMarginalV1LBLiquidityReceiverDeployer
+    address public immutable factory;
+
     /// @inheritdoc IMarginalV1LBLiquidityReceiverDeployer
     address public immutable uniswapV3NonfungiblePositionManager;
     /// @inheritdoc IMarginalV1LBLiquidityReceiverDeployer
@@ -21,9 +27,8 @@ contract MarginalV1LBLiquidityReceiverDeployer is
     /// @inheritdoc IMarginalV1LBLiquidityReceiverDeployer
     address public immutable WETH9;
 
-    modifier onlyPoolSupplier(address pool) {
-        if (msg.sender != IMarginalV1LBPool(pool).supplier())
-            revert Unauthorized();
+    modifier onlyPoolSupplier() {
+        if (msg.sender != supplier) revert Unauthorized();
         _;
     }
 
@@ -32,12 +37,16 @@ contract MarginalV1LBLiquidityReceiverDeployer is
     error Unauthorized();
 
     constructor(
+        address _supplier,
         address _uniswapV3NonfungiblePositionManager,
         address _marginalV1Factory,
         address _marginalV1PoolInitializer,
         address _marginalV1Router,
         address _WETH9
     ) {
+        supplier = _supplier;
+        factory = IMarginalV1LBSupplier(_supplier).factory();
+
         uniswapV3NonfungiblePositionManager = _uniswapV3NonfungiblePositionManager;
         marginalV1Factory = _marginalV1Factory;
         marginalV1PoolInitializer = _marginalV1PoolInitializer;
@@ -53,10 +62,9 @@ contract MarginalV1LBLiquidityReceiverDeployer is
         external
         virtual
         override(IMarginalV1LBReceiverDeployer)
-        onlyPoolSupplier(pool)
+        onlyPoolSupplier
         returns (address receiver)
     {
-        address factory = IMarginalV1LBPool(pool).factory();
         receiver = address(
             new MarginalV1LBLiquidityReceiver{
                 salt: keccak256(abi.encode(msg.sender, pool))

@@ -28,9 +28,12 @@ def supplier(project, accounts, factory, mock_margv1_factory, WETH9):
 
 
 @pytest.fixture(scope="module")
-def liquidity_receiver_deployer(project, accounts, mock_margv1_factory, WETH9):
+def liquidity_receiver_deployer(
+    project, accounts, supplier, mock_margv1_factory, WETH9
+):
     # TODO: replace zero addresses with mocks
     return project.MarginalV1LBLiquidityReceiverDeployer.deploy(
+        supplier.address,  # margv1 lbp supplier
         ZERO_ADDRESS,  # univ3 manager
         mock_margv1_factory.address,
         ZERO_ADDRESS,  # margv1 initializer

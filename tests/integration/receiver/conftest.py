@@ -23,9 +23,11 @@ def margv1_liquidity_receiver_deployer(
     margv1_factory,
     margv1_initializer,
     margv1_router,
+    margv1_supplier,
     WETH9,
 ):
     return project.MarginalV1LBLiquidityReceiverDeployer.deploy(
+        margv1_supplier.address,
         univ3_manager.address,
         margv1_factory.address,
         margv1_initializer.address,
