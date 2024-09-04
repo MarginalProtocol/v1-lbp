@@ -433,7 +433,6 @@ contract MarginalV1LBLiquidityReceiver is
 
         // calculate tick upper/lower ticks for full tick range given uniswap v3 fee tier
         // @dev finite full tick range implies *less* physical reserves required to mint than calculated at initialize
-        // TODO: check finite full tick range math
         (int24 tickLower, int24 tickUpper) = fullTickRange(params.uniswapV3Fee);
 
         // add liquidity based on lbp price to avoid slippage issues
@@ -463,7 +462,7 @@ contract MarginalV1LBLiquidityReceiver is
                     amount0Desired: amount0Desired,
                     amount1Desired: amount1Desired,
                     amount0Min: 0,
-                    amount1Min: 0, // TODO: issue for slippage?
+                    amount1Min: 0,
                     recipient: address(this),
                     deadline: block.timestamp
                 })
@@ -562,14 +561,13 @@ contract MarginalV1LBLiquidityReceiver is
             // @dev use uniswap v3 sqrt price to adjust desired amounts for burn via liquidity calculations
             (sqrtPriceX96, , , , , , ) = IUniswapV3Pool(uniswapV3Pool).slot0();
 
-            // TODO: fix logic for liquidity burned? use quoter?
             // liquidity (roughly) contributed to marginal v1 pool ignoring burn
             uint128 liquidityDesired = LiquidityAmounts.getLiquidityForAmounts(
                 sqrtPriceX96,
                 amount0Desired,
                 amount1Desired
             );
-            uint128 liquidityBurned = PoolConstants.MINIMUM_LIQUIDITY ** 2; // TODO: validation around minimum liquidity?
+            uint128 liquidityBurned = PoolConstants.MINIMUM_LIQUIDITY ** 2;
             // factor of 2 for extra significant buffer given swap increases liquidity due to fee
             liquidityDesired -= 2 * liquidityBurned;
             // back to amounts{0,1} with uniswap v3 sqrt price so near exact contribution (< original desired)
@@ -601,7 +599,7 @@ contract MarginalV1LBLiquidityReceiver is
                         amount0Desired: amount0Desired,
                         amount1Desired: amount1Desired,
                         amount0Min: 0,
-                        amount1Min: 0, // TODO: issue for slippage?
+                        amount1Min: 0,
                         deadline: block.timestamp
                     })
                 );
@@ -629,7 +627,7 @@ contract MarginalV1LBLiquidityReceiver is
                         amount0Desired: amount0Desired,
                         amount1Desired: amount1Desired,
                         amount0Min: 0,
-                        amount1Min: 0, // TODO: issue for slippage?
+                        amount1Min: 0,
                         deadline: block.timestamp
                     })
                 );
