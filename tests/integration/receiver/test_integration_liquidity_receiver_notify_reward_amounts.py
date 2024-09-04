@@ -11,7 +11,7 @@ from utils.utils import calc_sqrt_price_x96_from_tick
 @pytest.mark.parametrize("fee_protocol", [10])
 @pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 @pytest.mark.parametrize("percent_thru_range", [1.0])
-def test_integration_liquidity_receiver_notify_reward_amounts__updates_reserves_and_transfers_funds(
+def test_integration_liquidity_receiver_notify_reward_amounts__updates_reserves_timestamp_and_transfers_funds(
     margv1_liquidity_receiver_and_pool_finalized,
     factory,
     sender,
@@ -75,6 +75,9 @@ def test_integration_liquidity_receiver_notify_reward_amounts__updates_reserves_
     assert pytest.approx(balance1_receiver, rel=1e-6) == reserve1
     assert balance0_receiver >= reserve0
     assert balance1_receiver >= reserve1
+
+    timestamp_notified = liquidity_receiver.blockTimestampNotified()
+    assert timestamp_notified == chain.blocks.head.timestamp
 
     (balance0_treasury, balance1_treasury) = (
         margv1_token0.balanceOf(treasury),

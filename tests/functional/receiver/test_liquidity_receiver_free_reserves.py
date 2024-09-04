@@ -1,10 +1,7 @@
 import pytest
 
+from ape import reverts
 from utils.constants import MIN_SQRT_RATIO, MAX_SQRT_RATIO
-from utils.utils import calc_range_amounts_from_liquidity_sqrt_price_x96
-
-
-# TODO: test exit, revert cases
 
 
 @pytest.fixture
@@ -57,7 +54,7 @@ def liquidity_receiver_and_pool_finalized(
 
 @pytest.mark.parametrize("fee_protocol", [0, 10, 100])
 @pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
-def test_liquidity_receiver_notify_reward_amounts__updates_reserves_and_timestamp(
+def test_liquidity_receiver_free_reserves__updates_reserves(
     factory,
     supplier,
     liquidity_receiver_and_pool_finalized,
@@ -84,26 +81,6 @@ def test_liquidity_receiver_notify_reward_amounts__updates_reserves_and_timestam
     state = pool_finalized_with_liquidity.state()
     assert state.finalized is True
     assert state.feeProtocol == fee_protocol
-
-    # amounts transferred from pool
-    (sqrt_price_lower_x96, sqrt_price_upper_x96) = (
-        pool_finalized_with_liquidity.sqrtPriceLowerX96(),
-        pool_finalized_with_liquidity.sqrtPriceUpperX96(),
-    )
-    (amount0, amount1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
-        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
-    )
-    (fees0, fees1) = range_math_lib.rangeFees(amount0, amount1, fee_protocol)
-    amount0 -= fees0
-    amount1 -= fees1
-
-    liquidity_receiver_params = liquidity_receiver.receiverParams()
-    (reserve0, reserve1) = (
-        liquidity_receiver.reserve0(),
-        liquidity_receiver.reserve1(),
-    )
-    assert reserve0 > 0 if init_with_sqrt_price_lower_x96 else reserve1 > 0
-    assert liquidity_receiver.blockTimestampNotified() == 0
 
     assert sender.address != finalizer.address
     pending_timestamp = chain.pending_timestamp
@@ -118,27 +95,31 @@ def test_liquidity_receiver_notify_reward_amounts__updates_reserves_and_timestam
     )
     supplier.finalizePool(params, sender=sender)
 
-    # factor in amount sent to treasury from amounts in
-    amount0_treasury = int((amount0 * liquidity_receiver_params.treasuryRatio) / 1e6)
-    amount1_treasury = int((amount1 * liquidity_receiver_params.treasuryRatio) / 1e6)
+    # check receiver notified
+    timestamp_notified = liquidity_receiver.blockTimestampNotified()
+    assert timestamp_notified == pending_timestamp
 
-    reserve0 += amount0 - amount0_treasury
-    reserve1 += amount1 - amount1_treasury
-
-    (result_reserve0, result_reserve1) = (
+    # check reserves added
+    (reserve0, reserve1) = (
         liquidity_receiver.reserve0(),
         liquidity_receiver.reserve1(),
     )
-    assert pytest.approx(result_reserve0, rel=1e-6) == reserve0
-    assert pytest.approx(result_reserve1, rel=1e-6) == reserve1
+    assert reserve0 > 0
+    assert reserve1 > 0
 
-    result_timestamp_notified = liquidity_receiver.blockTimestampNotified()
-    assert result_timestamp_notified == pending_timestamp
+    # mine the chain forward past deadline
+    receiver_params = liquidity_receiver.receiverParams()
+    chain.mine(timestamp=timestamp_notified + receiver_params.lockDuration + 1)
+
+    liquidity_receiver.freeReserves(sender=sender)
+
+    assert liquidity_receiver.reserve0() == 0
+    assert liquidity_receiver.reserve1() == 0
 
 
 @pytest.mark.parametrize("fee_protocol", [0, 10, 100])
 @pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
-def test_liquidity_receiver_notify_reward_amounts__transfers_funds(
+def test_liquidity_receiver_free_reserves__transfers_funds(
     factory,
     supplier,
     liquidity_receiver_and_pool_finalized,
@@ -166,38 +147,9 @@ def test_liquidity_receiver_notify_reward_amounts__transfers_funds(
     assert state.finalized is True
     assert state.feeProtocol == fee_protocol
 
-    # amounts transferred from pool
-    (sqrt_price_lower_x96, sqrt_price_upper_x96) = (
-        pool_finalized_with_liquidity.sqrtPriceLowerX96(),
-        pool_finalized_with_liquidity.sqrtPriceUpperX96(),
-    )
-    (amount0, amount1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
-        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
-    )
-    (fees0, fees1) = range_math_lib.rangeFees(amount0, amount1, fee_protocol)
-    amount0 -= fees0
-    amount1 -= fees1
-
-    liquidity_receiver_params = liquidity_receiver.receiverParams()
-    (reserve0, reserve1) = (
-        liquidity_receiver.reserve0(),
-        liquidity_receiver.reserve1(),
-    )
-    assert reserve0 > 0 if init_with_sqrt_price_lower_x96 else reserve1 > 0
-    assert liquidity_receiver_params.treasuryAddress == finalizer.address
-
-    # cache balances prior
-    (balance0_receiver, balance1_receiver) = (
-        token0.balanceOf(liquidity_receiver.address),
-        token1.balanceOf(liquidity_receiver.address),
-    )
-    (balance0_treasury, balance1_treasury) = (
-        token0.balanceOf(liquidity_receiver_params.treasuryAddress),
-        token1.balanceOf(liquidity_receiver_params.treasuryAddress),
-    )
-
     assert sender.address != finalizer.address
-    deadline = chain.pending_timestamp + 3600
+    pending_timestamp = chain.pending_timestamp
+    deadline = pending_timestamp + 3600
     params = (
         pool_finalized_with_liquidity.token0(),
         pool_finalized_with_liquidity.token1(),
@@ -208,37 +160,53 @@ def test_liquidity_receiver_notify_reward_amounts__transfers_funds(
     )
     supplier.finalizePool(params, sender=sender)
 
-    # factor in amount sent to treasury from amounts in
-    amount0_treasury = int((amount0 * liquidity_receiver_params.treasuryRatio) / 1e6)
-    amount1_treasury = int((amount1 * liquidity_receiver_params.treasuryRatio) / 1e6)
+    # check receiver notified
+    timestamp_notified = liquidity_receiver.blockTimestampNotified()
+    assert timestamp_notified == pending_timestamp
 
-    balance0_receiver += amount0 - amount0_treasury
-    balance1_receiver += amount1 - amount1_treasury
+    # check reserves added
+    (reserve0, reserve1) = (
+        liquidity_receiver.reserve0(),
+        liquidity_receiver.reserve1(),
+    )
+    assert reserve0 > 0
+    assert reserve1 > 0
 
-    balance0_treasury += amount0_treasury
-    balance1_treasury += amount1_treasury
+    # mine the chain forward past deadline
+    receiver_params = liquidity_receiver.receiverParams()
+    chain.mine(timestamp=timestamp_notified + receiver_params.lockDuration + 1)
+
+    # cache balances before
+    (balance0_receiver, balance1_receiver) = (
+        token0.balanceOf(liquidity_receiver.address),
+        token1.balanceOf(liquidity_receiver.address),
+    )
+    (balance0_sender, balance1_sender) = (
+        token0.balanceOf(sender.address),
+        token1.balanceOf(sender.address),
+    )
+
+    assert receiver_params.refundAddress == sender.address
+    liquidity_receiver.freeReserves(sender=sender)
 
     (balance0_receiver_after, balance1_receiver_after) = (
         token0.balanceOf(liquidity_receiver.address),
         token1.balanceOf(liquidity_receiver.address),
     )
-    assert pytest.approx(balance0_receiver_after, rel=1e-6) == balance0_receiver
-    assert pytest.approx(balance1_receiver_after, rel=1e-6) == balance1_receiver
-
-    assert balance0_receiver_after >= liquidity_receiver.reserve0()
-    assert balance1_receiver_after >= liquidity_receiver.reserve1()
-
-    (balance0_treasury_after, balance1_treasury_after) = (
-        token0.balanceOf(liquidity_receiver_params.treasuryAddress),
-        token1.balanceOf(liquidity_receiver_params.treasuryAddress),
+    (balance0_sender_after, balance1_sender_after) = (
+        token0.balanceOf(sender.address),
+        token1.balanceOf(sender.address),
     )
-    assert pytest.approx(balance0_treasury_after, rel=1e-6) == balance0_treasury
-    assert pytest.approx(balance1_treasury_after, rel=1e-6) == balance1_treasury
+
+    assert balance0_receiver_after == 0
+    assert balance1_receiver_after == 0
+    assert balance0_sender_after == balance0_sender + balance0_receiver
+    assert balance1_sender_after == balance1_sender + balance1_receiver
 
 
 @pytest.mark.parametrize("fee_protocol", [0, 10, 100])
 @pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
-def test_liquidity_receiver_notify_reward_amounts__emits_rewards_added(
+def test_liquidity_receiver_free_reserves__reverts_when_deadline_not_passed(
     factory,
     supplier,
     liquidity_receiver_and_pool_finalized,
@@ -266,20 +234,9 @@ def test_liquidity_receiver_notify_reward_amounts__emits_rewards_added(
     assert state.finalized is True
     assert state.feeProtocol == fee_protocol
 
-    # amounts transferred from pool
-    (sqrt_price_lower_x96, sqrt_price_upper_x96) = (
-        pool_finalized_with_liquidity.sqrtPriceLowerX96(),
-        pool_finalized_with_liquidity.sqrtPriceUpperX96(),
-    )
-    (amount0, amount1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
-        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
-    )
-    (fees0, fees1) = range_math_lib.rangeFees(amount0, amount1, fee_protocol)
-    amount0 -= fees0
-    amount1 -= fees1
-
     assert sender.address != finalizer.address
-    deadline = chain.pending_timestamp + 3600
+    pending_timestamp = chain.pending_timestamp
+    deadline = pending_timestamp + 3600
     params = (
         pool_finalized_with_liquidity.token0(),
         pool_finalized_with_liquidity.token1(),
@@ -288,35 +245,23 @@ def test_liquidity_receiver_notify_reward_amounts__emits_rewards_added(
         pool_finalized_with_liquidity.blockTimestampInitialize(),
         deadline,
     )
-    tx = supplier.finalizePool(params, sender=sender)
-    events = tx.decode_logs(liquidity_receiver.RewardsAdded)
-    assert len(events) == 1
-    event = events[0]
+    supplier.finalizePool(params, sender=sender)
 
+    # check receiver notified
+    timestamp_notified = liquidity_receiver.blockTimestampNotified()
+    assert timestamp_notified == pending_timestamp
+
+    # check reserves added
     (reserve0, reserve1) = (
         liquidity_receiver.reserve0(),
         liquidity_receiver.reserve1(),
     )
+    assert reserve0 > 0
+    assert reserve1 > 0
 
-    assert pytest.approx(event.amount0, rel=1e-6) == amount0
-    assert pytest.approx(event.amount1, rel=1e-6) == amount1
-    assert event.reserve0After == reserve0
-    assert event.reserve1After == reserve1
+    # mine the chain forward past deadline
+    receiver_params = liquidity_receiver.receiverParams()
+    chain.mine(timestamp=timestamp_notified + receiver_params.lockDuration - 2)
 
-
-@pytest.mark.parametrize("fee_protocol", [0, 10, 100])
-@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
-def test_liquidity_receiver_notify_reward_amounts__updates_state_when_exit(
-    factory,
-    supplier,
-    liquidity_receiver_and_pool_finalized,
-    token0,
-    token1,
-    sender,
-    admin,
-    finalizer,
-    chain,
-    fee_protocol,
-    init_with_sqrt_price_lower_x96,
-):
-    pass
+    with reverts(liquidity_receiver.DeadlineNotPassed):
+        liquidity_receiver.freeReserves(sender=sender)

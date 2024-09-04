@@ -54,6 +54,9 @@ contract MarginalV1LBLiquidityReceiver is
     /// @inheritdoc IMarginalV1LBLiquidityReceiver
     uint256 public reserve1;
 
+    /// @inheritdoc IMarginalV1LBLiquidityReceiver
+    uint96 public blockTimestampNotified;
+
     struct ReceiverParams {
         /// address of the treasury to send treasury ratio funds
         address treasuryAddress;
@@ -134,17 +137,16 @@ contract MarginalV1LBLiquidityReceiver is
         uint256 shares,
         address recipient
     );
+    event FreeReserves(uint256 amount0, uint256 amount1, address recipient);
 
     error Unauthorized();
     error Initialized();
     error Locked();
-    error Notified();
     error PoolNotInitialized();
     error PoolNotFinalized();
     error InvalidRatio();
     error InvalidAddress();
     error InvalidReserves();
-    error InvalidPool();
     error InvalidUniswapV3Fee();
     error InvalidMarginalV1Maintenance();
     error Amount0LessThanMin();
@@ -343,6 +345,10 @@ contract MarginalV1LBLiquidityReceiver is
         reserve0 = _reserve0;
         reserve1 = _reserve1;
 
+        // mark timestamp at which notified
+        blockTimestampNotified = _blockTimestamp();
+
+        // transfer funds to treasury
         if (amount0Treasury > 0)
             pay(token0, address(this), params.treasuryAddress, amount0Treasury);
         if (amount1Treasury > 0)
@@ -705,5 +711,28 @@ contract MarginalV1LBLiquidityReceiver is
         pay(info.poolAddress, address(this), recipient, shares);
 
         emit FreeMarginalV1(info.poolAddress, shares, recipient);
+    }
+
+    /// @inheritdoc IMarginalV1LBLiquidityReceiver
+    function freeReserves() external lock {
+        ReceiverParams memory params = receiverParams;
+        checkDeadline(blockTimestampNotified, params.lockDuration);
+
+        (uint256 _reserve0, uint256 _reserve1) = (reserve0, reserve1);
+        if (_reserve0 == 0 && _reserve1 == 0) revert InvalidReserves();
+
+        // refund any left over unused amounts from uniswap v3 and marginal v1 mints
+        uint256 balance0 = balance(token0);
+        uint256 balance1 = balance(token1);
+        if (balance0 > 0)
+            pay(token0, address(this), params.refundAddress, balance0);
+        if (balance1 > 0)
+            pay(token1, address(this), params.refundAddress, balance1);
+
+        // set reserves to zero
+        reserve0 = 0;
+        reserve1 = 0;
+
+        emit FreeReserves(balance0, balance1, params.refundAddress);
     }
 }
