@@ -142,6 +142,7 @@ contract MarginalV1LBLiquidityReceiver is
     error PoolNotInitialized();
     error PoolNotFinalized();
     error InvalidRatio();
+    error InvalidAddress();
     error InvalidReserves();
     error InvalidPool();
     error InvalidUniswapV3Fee();
@@ -173,6 +174,10 @@ contract MarginalV1LBLiquidityReceiver is
     function checkParams(ReceiverParams memory params) public {
         if (params.treasuryRatio > 1e6 || params.uniswapV3Ratio > 1e6)
             revert InvalidRatio();
+        if (
+            params.treasuryAddress == address(0) ||
+            params.refundAddress == address(0)
+        ) revert InvalidAddress();
         fullTickRange(params.uniswapV3Fee);
         maximumLeverage(params.marginalV1Maintenance);
     }
