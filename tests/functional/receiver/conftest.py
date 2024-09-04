@@ -87,7 +87,7 @@ def finalizer(accounts):
 
 
 @pytest.fixture(scope="module")
-def receiver_params(finalizer):
+def receiver_params(finalizer, sender):
     return (
         finalizer.address,  # treasuryAddress
         int(0.1e6),  # treasuryRatio: 10% to treasury
@@ -98,6 +98,7 @@ def receiver_params(finalizer):
         250000,  # marginalV1Maintenance
         finalizer.address,  # lockOwner
         int(86400 * 30),  # lockDuration: 30 days
+        sender.address,  # refundAddress
     )
 
 
@@ -127,7 +128,16 @@ def liquidity_receiver_and_pool(
             else (spot_reserve1 * 100) // 10000
         )
         receiver_data = encode(
-            ["address", "uint24", "uint24", "uint24", "uint24", "address", "uint96"],
+            [
+                "address",
+                "uint24",
+                "uint24",
+                "uint24",
+                "uint24",
+                "address",
+                "uint96",
+                "address",
+            ],
             receiver_params,
         )
         deadline = chain.pending_timestamp

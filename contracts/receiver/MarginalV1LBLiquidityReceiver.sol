@@ -69,6 +69,8 @@ contract MarginalV1LBLiquidityReceiver is
         address lockOwner;
         /// seconds after which can unlock liquidity receipt tokens from this contract
         uint96 lockDuration;
+        /// address to refund unspent funds to
+        address refundAddress;
     }
     /// @inheritdoc IMarginalV1LBLiquidityReceiver
     ReceiverParams public receiverParams;
@@ -633,9 +635,9 @@ contract MarginalV1LBLiquidityReceiver is
         uint256 balance0 = balance(token0);
         uint256 balance1 = balance(token1);
         if (balance0 > 0)
-            pay(token0, address(this), params.treasuryAddress, balance0);
+            pay(token0, address(this), params.refundAddress, balance0);
         if (balance1 > 0)
-            pay(token1, address(this), params.treasuryAddress, balance1);
+            pay(token1, address(this), params.refundAddress, balance1);
 
         // set reserves to zero
         reserve0 = 0;

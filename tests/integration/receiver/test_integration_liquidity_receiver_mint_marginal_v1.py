@@ -645,9 +645,9 @@ def test_integration_liquidity_receiver_mint_marginal_v1__transfer_funds_when_po
         margv1_token0.balanceOf(liquidity_receiver.address),
         margv1_token1.balanceOf(liquidity_receiver.address),
     )
-    (balance0_treasury, balance1_treasury) = (
-        margv1_token0.balanceOf(treasury.address),
-        margv1_token1.balanceOf(treasury.address),
+    (balance0_sender, balance1_sender) = (
+        margv1_token0.balanceOf(sender.address),
+        margv1_token1.balanceOf(sender.address),
     )
 
     # mint margv1 liquidity
@@ -661,7 +661,7 @@ def test_integration_liquidity_receiver_mint_marginal_v1__transfer_funds_when_po
     amount0 = event.amount0
     amount1 = event.amount1
 
-    # check token balance differences sent to treasury
+    # check token balance differences sent to refund address
     balance0_receiver -= amount0
     balance1_receiver -= amount1
 
@@ -672,16 +672,16 @@ def test_integration_liquidity_receiver_mint_marginal_v1__transfer_funds_when_po
     assert balance0_receiver_after == 0
     assert balance1_receiver_after == 0
 
-    # add balances to treasury
-    balance0_treasury += balance0_receiver
-    balance1_treasury += balance1_receiver
+    # add balances to refund address
+    balance0_sender += balance0_receiver
+    balance1_sender += balance1_receiver
 
-    (balance0_treasury_after, balance1_treasury_after) = (
-        margv1_token0.balanceOf(treasury.address),
-        margv1_token1.balanceOf(treasury.address),
+    (balance0_sender_after, balance1_sender_after) = (
+        margv1_token0.balanceOf(sender.address),
+        margv1_token1.balanceOf(sender.address),
     )
-    assert balance0_treasury_after == balance0_treasury
-    assert balance1_treasury_after == balance1_treasury
+    assert balance0_sender_after == balance0_sender
+    assert balance1_sender_after == balance1_sender
 
 
 @pytest.mark.integration
@@ -783,9 +783,9 @@ def test_integration_liquidity_receiver_mint_marginal_v1__transfer_funds_when_po
         margv1_token0.balanceOf(liquidity_receiver.address),
         margv1_token1.balanceOf(liquidity_receiver.address),
     )
-    (balance0_treasury, balance1_treasury) = (
-        margv1_token0.balanceOf(treasury.address),
-        margv1_token1.balanceOf(treasury.address),
+    (balance0_sender, balance1_sender) = (
+        margv1_token0.balanceOf(sender.address),
+        margv1_token1.balanceOf(sender.address),
     )
 
     # mint margv1 liquidity
@@ -799,7 +799,7 @@ def test_integration_liquidity_receiver_mint_marginal_v1__transfer_funds_when_po
     amount0 = event.amount0
     amount1 = event.amount1
 
-    # check token balance differences sent to treasury
+    # check token balance differences sent to refund address
     balance0_receiver -= amount0
     balance1_receiver -= amount1
 
@@ -810,13 +810,13 @@ def test_integration_liquidity_receiver_mint_marginal_v1__transfer_funds_when_po
     assert balance0_receiver_after == 0
     assert balance1_receiver_after == 0
 
-    # add balances to treasury
-    balance0_treasury += balance0_receiver
-    balance1_treasury += balance1_receiver
+    # add balances to refund address
+    balance0_sender += balance0_receiver
+    balance1_sender += balance1_receiver
 
-    (balance0_treasury_after, balance1_treasury_after) = (
-        margv1_token0.balanceOf(treasury.address),
-        margv1_token1.balanceOf(treasury.address),
+    (balance0_sender_after, balance1_sender_after) = (
+        margv1_token0.balanceOf(sender.address),
+        margv1_token1.balanceOf(sender.address),
     )
-    assert balance0_treasury_after == balance0_treasury
-    assert balance1_treasury_after == balance1_treasury
+    assert balance0_sender_after == balance0_sender
+    assert balance1_sender_after == balance1_sender

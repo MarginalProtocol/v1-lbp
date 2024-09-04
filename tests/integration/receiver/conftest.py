@@ -36,7 +36,7 @@ def margv1_liquidity_receiver_deployer(
 
 
 @pytest.fixture(scope="module")
-def margv1_receiver_params(finalizer, treasury):
+def margv1_receiver_params(finalizer, treasury, sender):
     return (
         treasury.address,  # treasuryAddress
         int(0.1e6),  # treasuryRatio: 10% to treasury
@@ -47,6 +47,7 @@ def margv1_receiver_params(finalizer, treasury):
         250000,  # marginalV1Maintenance
         finalizer.address,  # lockOwner
         int(86400 * 30),  # lockDuration: 30 days
+        sender.address,  # refundAddress
     )
 
 
@@ -76,7 +77,16 @@ def margv1_liquidity_receiver_and_pool(
             else margv1_token1.balanceOf(sender.address) // 10
         )
         receiver_data = encode(
-            ["address", "uint24", "uint24", "uint24", "uint24", "address", "uint96"],
+            [
+                "address",
+                "uint24",
+                "uint24",
+                "uint24",
+                "uint24",
+                "address",
+                "uint96",
+                "address",
+            ],
             margv1_receiver_params,
         )
         deadline = chain.pending_timestamp
@@ -178,7 +188,7 @@ def margv1_liquidity_receiver_and_pool_finalized(
 
 
 @pytest.fixture(scope="module")
-def another_margv1_receiver_params(finalizer, treasury):
+def another_margv1_receiver_params(finalizer, treasury, sender):
     return (
         treasury.address,  # treasuryAddress
         int(0.1e6),  # treasuryRatio: 10% to treasury
@@ -189,6 +199,7 @@ def another_margv1_receiver_params(finalizer, treasury):
         250000,  # marginalV1Maintenance
         finalizer.address,  # lockOwner
         int(86400 * 30),  # lockDuration: 30 days
+        sender.address,  # refundAddress
     )
 
 
@@ -220,7 +231,16 @@ def another_margv1_liquidity_receiver_and_pool(
             else margv1_token1.balanceOf(sender.address) // 100
         )
         receiver_data = encode(
-            ["address", "uint24", "uint24", "uint24", "uint24", "address", "uint96"],
+            [
+                "address",
+                "uint24",
+                "uint24",
+                "uint24",
+                "uint24",
+                "address",
+                "uint96",
+                "address",
+            ],
             another_margv1_receiver_params,
         )
         deadline = chain.pending_timestamp

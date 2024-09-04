@@ -30,6 +30,7 @@ interface IMarginalV1LBLiquidityReceiver is IMarginalV1LBReceiver {
     /// @return marginalV1Maintenance The minimum maintenance requirement of Marginal v1 pool to add liquidity to
     /// @return lockOwner The address that can unlock liquidity after lock passes from this contract
     /// @return lockDuration The number of seconds after which can unlock liquidity receipt tokens from this contract
+    /// @return refundAddress The address to refund unspent funds to
     function receiverParams()
         external
         view
@@ -40,7 +41,8 @@ interface IMarginalV1LBLiquidityReceiver is IMarginalV1LBReceiver {
             uint24 uniswapV3Fee,
             uint24 marginalV1Maintenance,
             address lockOwner,
-            uint96 lockDuration
+            uint96 lockDuration,
+            address refundAddress
         );
 
     /// @notice Returns the pool information for the created and initialized Uniswap v3 pool
