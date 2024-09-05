@@ -135,14 +135,12 @@ def token0_with_WETH9(
     WETH9,
     sender,
     callee,
-    supplier,
     router,
     spot_reserve0,
     chain,
 ):
     _token0 = token_a if pool_with_WETH9.token0() == token_a.address else WETH9
     _token0.approve(callee.address, 2**256 - 1, sender=sender)
-    _token0.approve(supplier.address, 2**256 - 1, sender=sender)
     _token0.approve(router.address, 2**256 - 1, sender=sender)
 
     if _token0.address == WETH9.address:
@@ -160,14 +158,12 @@ def token1_with_WETH9(
     WETH9,
     sender,
     callee,
-    supplier,
     router,
     spot_reserve1,
     chain,
 ):
     _token1 = WETH9 if pool_with_WETH9.token1() == WETH9.address else token_a
     _token1.approve(callee.address, 2**256 - 1, sender=sender)
-    _token1.approve(supplier.address, 2**256 - 1, sender=sender)
     _token1.approve(router.address, 2**256 - 1, sender=sender)
 
     if _token1.address == WETH9.address:
@@ -180,7 +176,7 @@ def token1_with_WETH9(
 
 @pytest.fixture(scope="module")
 def pool_initialized_with_WETH9(
-    pool,
+    pool_with_WETH9,
     callee,
     token0_with_WETH9,
     token1_with_WETH9,
@@ -188,17 +184,19 @@ def pool_initialized_with_WETH9(
     spot_liquidity,
     sqrt_price_x96_initial,
     ticks,
+    chain,
+    WETH9,
 ):
     def pool_initialized_with_WETH9(init_with_sqrt_price_lower_x96: bool):
         liquidity_delta = (spot_liquidity * 100) // 10000  # 1% of spot reserves
         sqrt_price_initialize_x96 = (
-            pool.sqrtPriceLowerX96()
+            pool_with_WETH9.sqrtPriceLowerX96()
             if init_with_sqrt_price_lower_x96
-            else pool.sqrtPriceUpperX96()
+            else pool_with_WETH9.sqrtPriceUpperX96()
         )
 
         callee.initialize(
-            pool.address,
+            pool_with_WETH9.address,
             liquidity_delta,
             sqrt_price_initialize_x96,
             sender=sender,
@@ -209,7 +207,7 @@ def pool_initialized_with_WETH9(
         tick_mid = (tick_lower + tick_upper) // 2
         sqrt_price_x96 = calc_sqrt_price_x96_from_tick(tick_mid)
 
-        sqrt_price_initialize_x96 = pool.sqrtPriceInitializeX96()
+        sqrt_price_initialize_x96 = pool_with_WETH9.sqrtPriceInitializeX96()
         (amount0, amount1) = calc_swap_amounts(
             liquidity_delta, sqrt_price_initialize_x96, sqrt_price_x96
         )
@@ -217,7 +215,12 @@ def pool_initialized_with_WETH9(
         zero_for_one = amount0 > 0
         amount_in = amount0 if zero_for_one else amount1
         token_in = token0_with_WETH9 if zero_for_one else token1_with_WETH9
-        token_in.mint(sender.address, amount_in, sender=sender)
+
+        if token_in.address == WETH9.address:
+            chain.set_balance(sender.address, amount_in + sender.balance)
+            WETH9.deposit(value=amount_in, sender=sender)
+        else:
+            token_in.mint(sender.address, amount_in, sender=sender)
 
         amount_specified = amount_in
         sqrt_price_limit_x96 = (
@@ -225,13 +228,13 @@ def pool_initialized_with_WETH9(
         )
 
         callee.swap(
-            pool.address,
+            pool_with_WETH9.address,
             sender.address,
             zero_for_one,
             amount_specified,
             sqrt_price_limit_x96,
             sender=sender,
         )
-        return pool
+        return pool_with_WETH9
 
     yield pool_initialized_with_WETH9
