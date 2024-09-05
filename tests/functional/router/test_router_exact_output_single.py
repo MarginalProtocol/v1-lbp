@@ -2,8 +2,10 @@ import pytest
 
 from ape import reverts
 from utils.utils import (
+    calc_swap_amounts,
     calc_range_amounts_from_liquidity_sqrt_price_x96,
     calc_tick_from_sqrt_price_x96,
+    calc_sqrt_price_x96_from_tick,
 )
 
 
@@ -486,4 +488,130 @@ def test_router_exact_output_single__reverts_when_amount_in_greater_than_max(
     )
 
     with reverts("Too much requested"):
+        router.exactOutputSingle(params, sender=sender)
+
+
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
+def test_router_exact_output_single__reverts_when_sqrt_price_x96_next_less_than_sqrt_price_lower(
+    pool_initialized,
+    router,
+    sender,
+    alice,
+    chain,
+    token0,
+    token1,
+    init_with_sqrt_price_lower_x96,
+    sqrt_price_math_lib,
+    liquidity_math_lib,
+    swap_math_lib,
+    range_math_lib,
+):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
+    assert pool_initialized_with_liquidity.sqrtPriceInitializeX96() > 0
+    assert pool_initialized_with_liquidity.totalSupply() > 0
+
+    state = pool_initialized_with_liquidity.state()
+    assert state.sqrtPriceX96 > 0
+
+    tick_lower = pool_initialized_with_liquidity.tickLower()
+    tick_upper = pool_initialized_with_liquidity.tickUpper()
+    supplier_address = pool_initialized_with_liquidity.supplier()
+    timestamp_initialize = pool_initialized_with_liquidity.blockTimestampInitialize()
+
+    token_in = pool_initialized_with_liquidity.token0()
+    token_out = pool_initialized_with_liquidity.token1()
+
+    deadline = chain.pending_timestamp + 3600
+    amount_in_max = 2**256 - 1
+    sqrt_price_limit_x96 = 0
+
+    tick_next = tick_lower - 100
+    sqrt_price_x96_next = calc_sqrt_price_x96_from_tick(tick_next)
+    # swap the pool to initial sqrt price
+    (amount0, amount1) = calc_swap_amounts(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_x96_next
+    )
+    token0.mint(sender.address, amount0, sender=sender)
+
+    amount_out = -amount1
+    assert amount_out > 0
+
+    params = (
+        token_in,
+        token_out,
+        tick_lower,
+        tick_upper,
+        supplier_address,
+        timestamp_initialize,
+        alice.address,  # recipient
+        deadline,
+        amount_out,
+        amount_in_max,
+        sqrt_price_limit_x96,
+    )
+
+    with reverts(range_math_lib.InvalidSqrtPriceX96):
+        router.exactOutputSingle(params, sender=sender)
+
+
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
+def test_router_exact_output_single__reverts_when_sqrt_price_x96_next_greater_than_sqrt_price_upper(
+    pool_initialized,
+    router,
+    sender,
+    alice,
+    chain,
+    token0,
+    token1,
+    init_with_sqrt_price_lower_x96,
+    sqrt_price_math_lib,
+    liquidity_math_lib,
+    swap_math_lib,
+    range_math_lib,
+):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
+    assert pool_initialized_with_liquidity.sqrtPriceInitializeX96() > 0
+    assert pool_initialized_with_liquidity.totalSupply() > 0
+
+    state = pool_initialized_with_liquidity.state()
+    assert state.sqrtPriceX96 > 0
+
+    tick_lower = pool_initialized_with_liquidity.tickLower()
+    tick_upper = pool_initialized_with_liquidity.tickUpper()
+    supplier_address = pool_initialized_with_liquidity.supplier()
+    timestamp_initialize = pool_initialized_with_liquidity.blockTimestampInitialize()
+
+    token_in = pool_initialized_with_liquidity.token1()
+    token_out = pool_initialized_with_liquidity.token0()
+
+    deadline = chain.pending_timestamp + 3600
+    amount_in_max = 2**256 - 1
+    sqrt_price_limit_x96 = 0
+
+    tick_next = tick_upper + 100
+    sqrt_price_x96_next = calc_sqrt_price_x96_from_tick(tick_next)
+    # swap the pool to initial sqrt price
+    (amount0, amount1) = calc_swap_amounts(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_x96_next
+    )
+    token1.mint(sender.address, amount1, sender=sender)
+
+    amount_out = -amount0
+    assert amount_out > 0
+
+    params = (
+        token_in,
+        token_out,
+        tick_lower,
+        tick_upper,
+        supplier_address,
+        timestamp_initialize,
+        alice.address,  # recipient
+        deadline,
+        amount_out,
+        amount_in_max,
+        sqrt_price_limit_x96,
+    )
+
+    with reverts(range_math_lib.InvalidSqrtPriceX96):
         router.exactOutputSingle(params, sender=sender)
