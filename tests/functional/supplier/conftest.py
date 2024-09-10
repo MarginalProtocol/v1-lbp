@@ -94,7 +94,6 @@ def receiver_and_pool(
             else (spot_reserve1 * 100) // 10000
         )
         receiver_data = encode(["address"], [sender.address])
-        deadline = chain.pending_timestamp
         params = (
             token0.address,
             token1.address,
@@ -107,7 +106,6 @@ def receiver_and_pool(
             receiver_deployer.address,
             receiver_data,
             finalizer.address,
-            deadline,
         )
         tx = supplier.createAndInitializePool(params, sender=sender)
 
@@ -180,7 +178,6 @@ def receiver_and_pool_with_WETH9(
             else (spot_reserve1 * 100) // 10000
         )
         receiver_data = encode(["address"], [sender.address])
-        deadline = chain.pending_timestamp
         params = (
             token0_with_WETH9.address,
             token1_with_WETH9.address,
@@ -193,7 +190,6 @@ def receiver_and_pool_with_WETH9(
             receiver_deployer.address,
             receiver_data,
             finalizer.address,
-            deadline,
         )
         tx = supplier.createAndInitializePool(params, sender=sender)
 

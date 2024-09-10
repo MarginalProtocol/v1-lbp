@@ -3,7 +3,6 @@ pragma solidity =0.8.15;
 
 import {TickMath} from "@uniswap/v3-core/contracts/libraries/TickMath.sol";
 import {LiquidityAmounts} from "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
-import {PeripheryValidation} from "@uniswap/v3-periphery/contracts/base/PeripheryValidation.sol";
 import {Multicall} from "@uniswap/v3-periphery/contracts/base/Multicall.sol";
 
 import {IMarginalV1MintCallback} from "@marginal/v1-core/contracts/interfaces/callback/IMarginalV1MintCallback.sol";
@@ -26,7 +25,6 @@ contract MarginalV1LBSupplier is
     IMarginalV1MintCallback,
     PeripheryImmutableState,
     PeripheryPayments,
-    PeripheryValidation,
     Multicall
 {
     /// @inheritdoc IMarginalV1LBSupplier
@@ -80,7 +78,6 @@ contract MarginalV1LBSupplier is
     )
         external
         payable
-        checkDeadline(params.deadline)
         returns (
             address pool,
             address receiver,
@@ -185,7 +182,6 @@ contract MarginalV1LBSupplier is
         FinalizeParams calldata params
     )
         external
-        checkDeadline(params.deadline)
         returns (
             uint128 liquidityDelta,
             uint160 sqrtPriceX96,

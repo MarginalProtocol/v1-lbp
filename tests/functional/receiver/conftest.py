@@ -143,7 +143,6 @@ def liquidity_receiver_and_pool(
             ],
             receiver_params,
         )
-        deadline = chain.pending_timestamp
         params = (
             token0.address,
             token1.address,
@@ -156,7 +155,6 @@ def liquidity_receiver_and_pool(
             liquidity_receiver_deployer.address,
             receiver_data,
             finalizer.address,
-            deadline,
         )
         tx = supplier.createAndInitializePool(params, sender=sender)
 

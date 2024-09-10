@@ -34,7 +34,6 @@ def test_supplier_create_and_initialize_pool__creates_pool_and_receiver(
         else (spot_reserve1 * 100) // 10000
     )
     receiver_data = encode(["address"], [sender.address])
-    deadline = chain.pending_timestamp + 3600
     timestamp_initialize = chain.pending_timestamp
     finalizer = alice.address
 
@@ -50,7 +49,6 @@ def test_supplier_create_and_initialize_pool__creates_pool_and_receiver(
         receiver_deployer.address,
         receiver_data,
         finalizer,
-        deadline,
     )
     tx = supplier.createAndInitializePool(params, sender=sender)
 
@@ -103,7 +101,6 @@ def test_supplier_create_and_initialize_pool__initializes_pool_and_receiver(
         else (spot_reserve1 * 100) // 10000
     )
     receiver_data = encode(["address"], [sender.address])
-    deadline = chain.pending_timestamp + 3600
     finalizer = alice.address
 
     params = (
@@ -118,7 +115,6 @@ def test_supplier_create_and_initialize_pool__initializes_pool_and_receiver(
         receiver_deployer.address,
         receiver_data,
         finalizer,
-        deadline,
     )
     tx = supplier.createAndInitializePool(params, sender=sender)
 
@@ -218,7 +214,6 @@ def test_supplier_create_and_initialize_pool__refunds_ETH_with_WETH9(
         else (spot_reserve1 * 100) // 10000
     )
     receiver_data = encode(["address"], [sender.address])
-    deadline = chain.pending_timestamp + 3600
     finalizer = alice.address
 
     sqrt_price_lower_x96 = calc_sqrt_price_x96_from_tick(tick_lower)
@@ -279,7 +274,6 @@ def test_supplier_create_and_initialize_pool__refunds_ETH_with_WETH9(
         receiver_deployer.address,
         receiver_data,
         finalizer,
-        deadline,
     )
     tx = supplier.createAndInitializePool(params, sender=sender, value=value)
 
@@ -343,7 +337,6 @@ def test_supplier_create_and_initialize_pool__reverts_when_amount0_less_than_min
         else (spot_reserve1 * 100) // 10000
     )
     receiver_data = encode(["address"], [sender.address])
-    deadline = chain.pending_timestamp + 3600
 
     amount0_pool = amount_desired
     amount0_pool += 1  # mint does a rough round up when adding liquidity
@@ -382,7 +375,6 @@ def test_supplier_create_and_initialize_pool__reverts_when_amount0_less_than_min
         receiver_deployer.address,
         receiver_data,
         alice.address,  # finalizer
-        deadline,
     )
     with reverts(supplier.Amount0LessThanMin):
         supplier.createAndInitializePool(params, sender=sender)
@@ -408,7 +400,6 @@ def test_supplier_create_and_initialize_pool__reverts_when_amount1_less_than_min
 
     amount_desired = (spot_reserve1 * 100) // 10000
     receiver_data = encode(["address"], [sender.address])
-    deadline = chain.pending_timestamp + 3600
 
     amount1_pool = amount_desired
     amount1_pool += 1  # mint does a rough round up when adding liquidity
@@ -449,7 +440,6 @@ def test_supplier_create_and_initialize_pool__reverts_when_amount1_less_than_min
         receiver_deployer.address,
         receiver_data,
         alice.address,  # finalizer
-        deadline,
     )
     with reverts(supplier.Amount1LessThanMin):
         supplier.createAndInitializePool(params, sender=sender)

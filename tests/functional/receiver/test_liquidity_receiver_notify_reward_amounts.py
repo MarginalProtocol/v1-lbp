@@ -107,14 +107,12 @@ def test_liquidity_receiver_notify_reward_amounts__updates_reserves_and_timestam
 
     assert sender.address != finalizer.address
     pending_timestamp = chain.pending_timestamp
-    deadline = pending_timestamp + 3600
     params = (
         pool_finalized_with_liquidity.token0(),
         pool_finalized_with_liquidity.token1(),
         pool_finalized_with_liquidity.tickLower(),
         pool_finalized_with_liquidity.tickUpper(),
         pool_finalized_with_liquidity.blockTimestampInitialize(),
-        deadline,
     )
     supplier.finalizePool(params, sender=sender)
 
@@ -197,14 +195,12 @@ def test_liquidity_receiver_notify_reward_amounts__transfers_funds(
     )
 
     assert sender.address != finalizer.address
-    deadline = chain.pending_timestamp + 3600
     params = (
         pool_finalized_with_liquidity.token0(),
         pool_finalized_with_liquidity.token1(),
         pool_finalized_with_liquidity.tickLower(),
         pool_finalized_with_liquidity.tickUpper(),
         pool_finalized_with_liquidity.blockTimestampInitialize(),
-        deadline,
     )
     supplier.finalizePool(params, sender=sender)
 
@@ -279,14 +275,12 @@ def test_liquidity_receiver_notify_reward_amounts__emits_rewards_added(
     amount1 -= fees1
 
     assert sender.address != finalizer.address
-    deadline = chain.pending_timestamp + 3600
     params = (
         pool_finalized_with_liquidity.token0(),
         pool_finalized_with_liquidity.token1(),
         pool_finalized_with_liquidity.tickLower(),
         pool_finalized_with_liquidity.tickUpper(),
         pool_finalized_with_liquidity.blockTimestampInitialize(),
-        deadline,
     )
     tx = supplier.finalizePool(params, sender=sender)
     events = tx.decode_logs(liquidity_receiver.RewardsAdded)

@@ -28,7 +28,6 @@ interface IMarginalV1LBSupplier is IPeripheryImmutableState {
         address receiverDeployer;
         bytes receiverData;
         address finalizer; // can early exit from pool after min duration
-        uint256 deadline;
     }
 
     /// @notice Creates a new liquidity boostrapping pool then initializes
@@ -58,7 +57,6 @@ interface IMarginalV1LBSupplier is IPeripheryImmutableState {
         int24 tickLower;
         int24 tickUpper;
         uint256 blockTimestampInitialize;
-        uint256 deadline;
     }
 
     /// @notice Finalizes an existing liquidity bootstrapping pool, then forwards received funds to recipient stored on initialization

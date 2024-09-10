@@ -91,7 +91,6 @@ def margv1_liquidity_receiver_and_pool(
             ],
             margv1_receiver_params,
         )
-        deadline = chain.pending_timestamp
         params = (
             margv1_token0.address,
             margv1_token1.address,
@@ -104,7 +103,6 @@ def margv1_liquidity_receiver_and_pool(
             margv1_liquidity_receiver_deployer.address,
             receiver_data,
             finalizer.address,
-            deadline,
         )
         tx = margv1_supplier.createAndInitializePool(params, sender=sender)
 
@@ -173,14 +171,12 @@ def margv1_liquidity_receiver_and_pool_finalized(
         )
         chain.mine(timestamp=timestamp_initialize + MINIMUM_DURATION + 1)
 
-        deadline = chain.pending_timestamp + 3600
         params = (
             pool_initialized_with_liquidity.token0(),
             pool_initialized_with_liquidity.token1(),
             pool_initialized_with_liquidity.tickLower(),
             pool_initialized_with_liquidity.tickUpper(),
             pool_initialized_with_liquidity.blockTimestampInitialize(),
-            deadline,
         )
         margv1_supplier.finalizePool(params, sender=finalizer)
 
@@ -245,7 +241,6 @@ def another_margv1_liquidity_receiver_and_pool(
             ],
             another_margv1_receiver_params,
         )
-        deadline = chain.pending_timestamp
         params = (
             another_margv1_token0.address,
             margv1_token1.address,
@@ -258,7 +253,6 @@ def another_margv1_liquidity_receiver_and_pool(
             margv1_liquidity_receiver_deployer.address,
             receiver_data,
             finalizer.address,
-            deadline,
         )
         tx = margv1_supplier.createAndInitializePool(params, sender=sender)
 
@@ -327,14 +321,12 @@ def another_margv1_liquidity_receiver_and_pool_finalized(
         )
         chain.mine(timestamp=timestamp_initialize + MINIMUM_DURATION + 1)
 
-        deadline = chain.pending_timestamp + 3600
         params = (
             pool_initialized_with_liquidity.token0(),
             pool_initialized_with_liquidity.token1(),
             pool_initialized_with_liquidity.tickLower(),
             pool_initialized_with_liquidity.tickUpper(),
             pool_initialized_with_liquidity.blockTimestampInitialize(),
-            deadline,
         )
         margv1_supplier.finalizePool(params, sender=finalizer)
 
