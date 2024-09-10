@@ -962,6 +962,7 @@ def test_pool_swap__emits_swap_with_exact_input_zero_for_one(
     assert event.sqrtPriceX96 == state.sqrtPriceX96
     assert event.liquidity == state.liquidity
     assert event.tick == state.tick
+    assert event.finalized == state.finalized
 
 
 @pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
@@ -1160,6 +1161,212 @@ def test_pool_swap__emits_swap_with_exact_output_one_for_zero(
     assert event.sqrtPriceX96 == state.sqrtPriceX96
     assert event.liquidity == state.liquidity
     assert event.tick == state.tick
+
+
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
+def test_pool_swap__when_sqrt_price_x96_next_less_than_sqrt_price_lower_with_exact_input(
+    pool_initialized,
+    callee,
+    sqrt_price_math_lib,
+    swap_math_lib,
+    sender,
+    alice,
+    token0,
+    token1,
+    ticks,
+    chain,
+    init_with_sqrt_price_lower_x96,
+):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
+    state = pool_initialized_with_liquidity.state()
+
+    sqrt_price_lower_x96 = pool_initialized_with_liquidity.sqrtPriceLowerX96()
+    sqrt_price_upper_x96 = pool_initialized_with_liquidity.sqrtPriceUpperX96()
+    (reserve0, reserve1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
+    )
+
+    (tick_lower, tick_upper) = ticks
+    tick_next = tick_lower - 100
+    sqrt_price_x96_next = calc_sqrt_price_x96_from_tick(tick_next)
+
+    # swap the pool to initial sqrt price
+    (amount0, amount1) = calc_swap_amounts(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_x96_next
+    )
+    token0.mint(sender.address, amount0, sender=sender)
+
+    amount_specified = amount0  # amount in
+    assert amount_specified > 0
+    zero_for_one = True
+    sqrt_price_limit_x96 = MIN_SQRT_RATIO + 1
+
+    # cache balances before
+    (balance0_sender, balance1_sender) = (
+        token0.balanceOf(sender.address),
+        token1.balanceOf(sender.address),
+    )
+    (balance0_alice, balance1_alice) = (
+        token0.balanceOf(alice.address),
+        token1.balanceOf(alice.address),
+    )
+    (balance0_pool, balance1_pool) = (
+        token0.balanceOf(pool_initialized_with_liquidity.address),
+        token1.balanceOf(pool_initialized_with_liquidity.address),
+    )
+
+    # update the oracle
+    block_timestamp_next = chain.pending_timestamp
+    tick_cumulative = state.tickCumulative + state.tick * (
+        block_timestamp_next - state.blockTimestamp
+    )
+
+    state.blockTimestamp = block_timestamp_next
+    state.tickCumulative = tick_cumulative
+
+    tx = callee.swap(
+        pool_initialized_with_liquidity.address,
+        alice.address,
+        zero_for_one,
+        amount_specified,
+        sqrt_price_limit_x96,
+        sender=sender,
+    )
+
+    # recalculate amounts based off upper price attained
+    (amount0_clamped, amount1_clamped) = calc_swap_amounts(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96
+    )
+
+    # update state price, should clamp to lower
+    state.sqrtPriceX96 = sqrt_price_lower_x96
+    state.tick = calc_tick_from_sqrt_price_x96(sqrt_price_lower_x96)
+    state.finalized = not init_with_sqrt_price_lower_x96
+
+    return_log = tx.decode_logs(callee.SwapReturn)[0]
+    assert pytest.approx(return_log.amount0, rel=1e-6) == amount0_clamped
+    assert pytest.approx(return_log.amount1, rel=1e-6) == amount1_clamped
+
+    state_after = pool_initialized_with_liquidity.state()
+    assert state_after == state
+
+    # check balances updated
+    balance0_sender -= return_log.amount0
+    balance1_alice += -return_log.amount1
+    balance0_pool += return_log.amount0
+    balance1_pool += return_log.amount1
+
+    assert balance0_sender == token0.balanceOf(sender.address)
+    assert balance1_sender == token1.balanceOf(sender.address)
+
+    assert balance0_alice == token0.balanceOf(alice.address)
+    assert balance1_alice == token1.balanceOf(alice.address)
+
+    assert balance0_pool == token0.balanceOf(pool_initialized_with_liquidity.address)
+    assert balance1_pool == token1.balanceOf(pool_initialized_with_liquidity.address)
+
+
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
+def test_pool_swap__when_sqrt_price_x96_next_greater_than_sqrt_price_upper_with_exact_input(
+    pool_initialized,
+    callee,
+    sqrt_price_math_lib,
+    swap_math_lib,
+    sender,
+    alice,
+    token0,
+    token1,
+    ticks,
+    chain,
+    init_with_sqrt_price_lower_x96,
+):
+    pool_initialized_with_liquidity = pool_initialized(init_with_sqrt_price_lower_x96)
+    state = pool_initialized_with_liquidity.state()
+
+    sqrt_price_lower_x96 = pool_initialized_with_liquidity.sqrtPriceLowerX96()
+    sqrt_price_upper_x96 = pool_initialized_with_liquidity.sqrtPriceUpperX96()
+    (reserve0, reserve1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
+    )
+
+    (tick_lower, tick_upper) = ticks
+    tick_next = tick_upper + 100
+    sqrt_price_x96_next = calc_sqrt_price_x96_from_tick(tick_next)
+
+    # swap the pool to initial sqrt price
+    (amount0, amount1) = calc_swap_amounts(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_x96_next
+    )
+    token1.mint(sender.address, amount1, sender=sender)
+
+    amount_specified = amount1  # amount in
+    assert amount_specified > 0
+    zero_for_one = False
+    sqrt_price_limit_x96 = MAX_SQRT_RATIO - 1
+
+    # cache balances before
+    (balance0_sender, balance1_sender) = (
+        token0.balanceOf(sender.address),
+        token1.balanceOf(sender.address),
+    )
+    (balance0_alice, balance1_alice) = (
+        token0.balanceOf(alice.address),
+        token1.balanceOf(alice.address),
+    )
+    (balance0_pool, balance1_pool) = (
+        token0.balanceOf(pool_initialized_with_liquidity.address),
+        token1.balanceOf(pool_initialized_with_liquidity.address),
+    )
+
+    # update the oracle
+    block_timestamp_next = chain.pending_timestamp
+    tick_cumulative = state.tickCumulative + state.tick * (
+        block_timestamp_next - state.blockTimestamp
+    )
+
+    state.blockTimestamp = block_timestamp_next
+    state.tickCumulative = tick_cumulative
+
+    tx = callee.swap(
+        pool_initialized_with_liquidity.address,
+        alice.address,
+        zero_for_one,
+        amount_specified,
+        sqrt_price_limit_x96,
+        sender=sender,
+    )
+
+    # recalculate amounts based off upper price attained
+    (amount0_clamped, amount1_clamped) = calc_swap_amounts(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_upper_x96
+    )
+
+    # update state price, should clamp to upper
+    state.sqrtPriceX96 = sqrt_price_upper_x96
+    state.tick = calc_tick_from_sqrt_price_x96(sqrt_price_upper_x96)
+    state.finalized = init_with_sqrt_price_lower_x96
+
+    return_log = tx.decode_logs(callee.SwapReturn)[0]
+    assert pytest.approx(return_log.amount0, rel=1e-6) == amount0_clamped
+    assert pytest.approx(return_log.amount1, rel=1e-6) == amount1_clamped
+
+    state_after = pool_initialized_with_liquidity.state()
+    assert state_after == state
+
+    # check balances updated
+    balance1_sender -= return_log.amount1
+    balance0_alice += -return_log.amount0
+    balance0_pool += return_log.amount0
+    balance1_pool += return_log.amount1
+
+    assert balance0_sender == token0.balanceOf(sender.address)
+    assert balance1_sender == token1.balanceOf(sender.address)
+
+    assert balance0_alice == token0.balanceOf(alice.address)
+    assert balance1_alice == token1.balanceOf(alice.address)
+
+    assert balance0_pool == token0.balanceOf(pool_initialized_with_liquidity.address)
+    assert balance1_pool == token1.balanceOf(pool_initialized_with_liquidity.address)
 
 
 @pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])

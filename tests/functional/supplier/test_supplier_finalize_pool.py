@@ -92,14 +92,12 @@ def test_supplier_finalize_pool__finalizes_pool(
     )
 
     assert sender.address != finalizer.address
-    deadline = chain.pending_timestamp + 3600
     params = (
         pool_finalized_with_liquidity.token0(),
         pool_finalized_with_liquidity.token1(),
         pool_finalized_with_liquidity.tickLower(),
         pool_finalized_with_liquidity.tickUpper(),
         pool_finalized_with_liquidity.blockTimestampInitialize(),
-        deadline,
     )
     supplier.finalizePool(params, sender=sender)
 
@@ -173,14 +171,12 @@ def test_supplier_finalize_pool__transfer_funds(
     amount1 -= fees1
 
     assert sender.address != finalizer.address
-    deadline = chain.pending_timestamp + 3600
     params = (
         pool_finalized_with_liquidity.token0(),
         pool_finalized_with_liquidity.token1(),
         pool_finalized_with_liquidity.tickLower(),
         pool_finalized_with_liquidity.tickUpper(),
         pool_finalized_with_liquidity.blockTimestampInitialize(),
-        deadline,
     )
     supplier.finalizePool(params, sender=sender)
 
@@ -266,14 +262,12 @@ def test_supplier_finalize_pool__notifies_reward_amounts(
     amount1 -= fees1
 
     assert sender.address != finalizer.address
-    deadline = chain.pending_timestamp + 3600
     params = (
         pool_finalized_with_liquidity.token0(),
         pool_finalized_with_liquidity.token1(),
         pool_finalized_with_liquidity.tickLower(),
         pool_finalized_with_liquidity.tickUpper(),
         pool_finalized_with_liquidity.blockTimestampInitialize(),
-        deadline,
     )
     tx = supplier.finalizePool(params, sender=sender)
 
@@ -334,14 +328,12 @@ def test_supplier_finalize_pool__finalizes_pool_when_exit(
     timestamp_initialize = pool_initialized_with_liquidity.blockTimestampInitialize()
     chain.mine(timestamp=timestamp_initialize + MINIMUM_DURATION + 1)
 
-    deadline = chain.pending_timestamp + 3600
     params = (
         pool_initialized_with_liquidity.token0(),
         pool_initialized_with_liquidity.token1(),
         pool_initialized_with_liquidity.tickLower(),
         pool_initialized_with_liquidity.tickUpper(),
         pool_initialized_with_liquidity.blockTimestampInitialize(),
-        deadline,
     )
     supplier.finalizePool(params, sender=finalizer)
 
@@ -383,14 +375,12 @@ def test_supplier_finalize_pool__reverts_when_cannot_exit(
         else receiver_reserve1 > 0
     )
 
-    deadline = chain.pending_timestamp + 3600
     params = (
         pool_initialized_with_liquidity.token0(),
         pool_initialized_with_liquidity.token1(),
         pool_initialized_with_liquidity.tickLower(),
         pool_initialized_with_liquidity.tickUpper(),
         pool_initialized_with_liquidity.blockTimestampInitialize(),
-        deadline,
     )
 
     with reverts(pool_initialized_with_liquidity.NotFinalized):
@@ -432,14 +422,12 @@ def test_supplier_finalize_pool__reverts_on_exit_when_not_finalizer(
     timestamp_initialize = pool_initialized_with_liquidity.blockTimestampInitialize()
     chain.mine(timestamp=timestamp_initialize + MINIMUM_DURATION + 1)
 
-    deadline = chain.pending_timestamp + 3600
     params = (
         pool_initialized_with_liquidity.token0(),
         pool_initialized_with_liquidity.token1(),
         pool_initialized_with_liquidity.tickLower(),
         pool_initialized_with_liquidity.tickUpper(),
         pool_initialized_with_liquidity.blockTimestampInitialize(),
-        deadline,
     )
 
     with reverts(supplier.Unauthorized):

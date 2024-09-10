@@ -23,9 +23,11 @@ def margv1_liquidity_receiver_deployer(
     margv1_factory,
     margv1_initializer,
     margv1_router,
+    margv1_supplier,
     WETH9,
 ):
     return project.MarginalV1LBLiquidityReceiverDeployer.deploy(
+        margv1_supplier.address,
         univ3_manager.address,
         margv1_factory.address,
         margv1_initializer.address,
@@ -36,7 +38,7 @@ def margv1_liquidity_receiver_deployer(
 
 
 @pytest.fixture(scope="module")
-def margv1_receiver_params(finalizer, treasury):
+def margv1_receiver_params(finalizer, treasury, sender):
     return (
         treasury.address,  # treasuryAddress
         int(0.1e6),  # treasuryRatio: 10% to treasury
@@ -47,6 +49,7 @@ def margv1_receiver_params(finalizer, treasury):
         250000,  # marginalV1Maintenance
         finalizer.address,  # lockOwner
         int(86400 * 30),  # lockDuration: 30 days
+        sender.address,  # refundAddress
     )
 
 
@@ -76,10 +79,18 @@ def margv1_liquidity_receiver_and_pool(
             else margv1_token1.balanceOf(sender.address) // 10
         )
         receiver_data = encode(
-            ["address", "uint24", "uint24", "uint24", "uint24", "address", "uint96"],
+            [
+                "address",
+                "uint24",
+                "uint24",
+                "uint24",
+                "uint24",
+                "address",
+                "uint96",
+                "address",
+            ],
             margv1_receiver_params,
         )
-        deadline = chain.pending_timestamp
         params = (
             margv1_token0.address,
             margv1_token1.address,
@@ -92,7 +103,6 @@ def margv1_liquidity_receiver_and_pool(
             margv1_liquidity_receiver_deployer.address,
             receiver_data,
             finalizer.address,
-            deadline,
         )
         tx = margv1_supplier.createAndInitializePool(params, sender=sender)
 
@@ -161,14 +171,12 @@ def margv1_liquidity_receiver_and_pool_finalized(
         )
         chain.mine(timestamp=timestamp_initialize + MINIMUM_DURATION + 1)
 
-        deadline = chain.pending_timestamp + 3600
         params = (
             pool_initialized_with_liquidity.token0(),
             pool_initialized_with_liquidity.token1(),
             pool_initialized_with_liquidity.tickLower(),
             pool_initialized_with_liquidity.tickUpper(),
             pool_initialized_with_liquidity.blockTimestampInitialize(),
-            deadline,
         )
         margv1_supplier.finalizePool(params, sender=finalizer)
 
@@ -178,7 +186,7 @@ def margv1_liquidity_receiver_and_pool_finalized(
 
 
 @pytest.fixture(scope="module")
-def another_margv1_receiver_params(finalizer, treasury):
+def another_margv1_receiver_params(finalizer, treasury, sender):
     return (
         treasury.address,  # treasuryAddress
         int(0.1e6),  # treasuryRatio: 10% to treasury
@@ -189,6 +197,7 @@ def another_margv1_receiver_params(finalizer, treasury):
         250000,  # marginalV1Maintenance
         finalizer.address,  # lockOwner
         int(86400 * 30),  # lockDuration: 30 days
+        sender.address,  # refundAddress
     )
 
 
@@ -220,10 +229,18 @@ def another_margv1_liquidity_receiver_and_pool(
             else margv1_token1.balanceOf(sender.address) // 100
         )
         receiver_data = encode(
-            ["address", "uint24", "uint24", "uint24", "uint24", "address", "uint96"],
+            [
+                "address",
+                "uint24",
+                "uint24",
+                "uint24",
+                "uint24",
+                "address",
+                "uint96",
+                "address",
+            ],
             another_margv1_receiver_params,
         )
-        deadline = chain.pending_timestamp
         params = (
             another_margv1_token0.address,
             margv1_token1.address,
@@ -236,7 +253,6 @@ def another_margv1_liquidity_receiver_and_pool(
             margv1_liquidity_receiver_deployer.address,
             receiver_data,
             finalizer.address,
-            deadline,
         )
         tx = margv1_supplier.createAndInitializePool(params, sender=sender)
 
@@ -305,14 +321,12 @@ def another_margv1_liquidity_receiver_and_pool_finalized(
         )
         chain.mine(timestamp=timestamp_initialize + MINIMUM_DURATION + 1)
 
-        deadline = chain.pending_timestamp + 3600
         params = (
             pool_initialized_with_liquidity.token0(),
             pool_initialized_with_liquidity.token1(),
             pool_initialized_with_liquidity.tickLower(),
             pool_initialized_with_liquidity.tickUpper(),
             pool_initialized_with_liquidity.blockTimestampInitialize(),
-            deadline,
         )
         margv1_supplier.finalizePool(params, sender=finalizer)
 

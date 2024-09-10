@@ -18,7 +18,6 @@ import {IMarginalV1SwapCallback} from "@marginal/v1-core/contracts/interfaces/ca
 
 import {RangeMath} from "./libraries/RangeMath.sol";
 
-import {IMarginalV1LBFinalizeCallback} from "./interfaces/callback/IMarginalV1LBFinalizeCallback.sol";
 import {IMarginalV1LBFactory} from "./interfaces/IMarginalV1LBFactory.sol";
 import {IMarginalV1LBPool} from "./interfaces/IMarginalV1LBPool.sol";
 
@@ -82,7 +81,8 @@ contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
         int256 amount1,
         uint160 sqrtPriceX96,
         uint128 liquidity,
-        int24 tick
+        int24 tick,
+        bool finalized
     );
     event Mint(
         address sender,
@@ -184,7 +184,7 @@ contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
 
     /// @inheritdoc IMarginalV1LBPool
     function finalize(
-        bytes calldata data
+        address recipient
     )
         external
         returns (
@@ -205,17 +205,10 @@ contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
         // burn liquidity to supplier
         (liquidityDelta, amount0, amount1, fees0, fees1) = burn(
             address(this),
-            msg.sender,
+            recipient,
             _totalSupply
         );
-
-        // notify supplier of funds transferred on burn
         sqrtPriceX96 = state.sqrtPriceX96;
-        IMarginalV1LBFinalizeCallback(msg.sender).marginalV1LBFinalizeCallback(
-            amount0,
-            amount1,
-            data
-        );
 
         emit Finalize(liquidityDelta, sqrtPriceX96, state.tick);
     }
@@ -283,16 +276,19 @@ contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
         ) revert SqrtPriceX96ExceedsLimit();
 
         // clamp if exceeds lower or upper range limits
-        // @dev no need to revert on exact input as trader pays more than necessary
+        bool clamped;
         if (
             !exactInput &&
             (sqrtPriceX96Next < sqrtPriceLowerX96 ||
                 sqrtPriceX96Next > sqrtPriceUpperX96)
         ) revert RangeMath.InvalidSqrtPriceX96();
-        else if (sqrtPriceX96Next < sqrtPriceLowerX96)
+        else if (sqrtPriceX96Next < sqrtPriceLowerX96) {
             sqrtPriceX96Next = sqrtPriceLowerX96;
-        else if (sqrtPriceX96Next > sqrtPriceUpperX96)
+            clamped = true;
+        } else if (sqrtPriceX96Next > sqrtPriceUpperX96) {
             sqrtPriceX96Next = sqrtPriceUpperX96;
+            clamped = true;
+        }
 
         // amounts without fees
         (amount0, amount1) = SwapMath.swapAmounts(
@@ -304,7 +300,7 @@ contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
         // optimistic amount out with callback for amount in
         if (!zeroForOne) {
             amount0 = !exactInput ? amountSpecified : amount0; // in case of rounding issues
-            amount1 = exactInput ? amountSpecified : amount1;
+            amount1 = exactInput && !clamped ? amountSpecified : amount1;
 
             if (amount0 < 0)
                 TransferHelper.safeTransfer(
@@ -326,7 +322,7 @@ contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
             _state.tick = TickMath.getTickAtSqrtRatio(sqrtPriceX96Next);
         } else {
             amount1 = !exactInput ? amountSpecified : amount1; // in case of rounding issues
-            amount0 = exactInput ? amountSpecified : amount0;
+            amount0 = exactInput && !clamped ? amountSpecified : amount0;
 
             if (amount1 < 0)
                 TransferHelper.safeTransfer(
@@ -361,7 +357,8 @@ contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
             amount1,
             _state.sqrtPriceX96,
             _state.liquidity,
-            _state.tick
+            _state.tick,
+            _state.finalized
         );
     }
 
@@ -386,8 +383,8 @@ contract MarginalV1LBPool is IMarginalV1LBPool, ERC20 {
             sqrtPriceLowerX96,
             sqrtPriceUpperX96
         );
-        amount0 += 1; // rough round up on amounts in when add liquidity
-        amount1 += 1;
+        if (_state.sqrtPriceX96 != sqrtPriceUpperX96) amount0 += 1; // rough round up on amounts in when add liquidity
+        if (_state.sqrtPriceX96 != sqrtPriceLowerX96) amount1 += 1;
 
         // total liquidity is available liquidity if all locked liquidity was returned to pool
         uint128 totalLiquidityAfter = _state.liquidity + liquidityDelta;

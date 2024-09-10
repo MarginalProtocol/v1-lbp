@@ -54,6 +54,9 @@ contract MarginalV1LBLiquidityReceiver is
     /// @inheritdoc IMarginalV1LBLiquidityReceiver
     uint256 public reserve1;
 
+    /// @inheritdoc IMarginalV1LBLiquidityReceiver
+    uint96 public blockTimestampNotified;
+
     struct ReceiverParams {
         /// address of the treasury to send treasury ratio funds
         address treasuryAddress;
@@ -69,6 +72,8 @@ contract MarginalV1LBLiquidityReceiver is
         address lockOwner;
         /// seconds after which can unlock liquidity receipt tokens from this contract
         uint96 lockDuration;
+        /// address to refund unspent funds to
+        address refundAddress;
     }
     /// @inheritdoc IMarginalV1LBLiquidityReceiver
     ReceiverParams public receiverParams;
@@ -96,6 +101,7 @@ contract MarginalV1LBLiquidityReceiver is
         _;
         unlocked = 2;
     }
+    uint256 private uninitialized = 2;
 
     event Initialize(uint256 reserve0, uint256 reserve1);
     event RewardsAdded(
@@ -131,16 +137,16 @@ contract MarginalV1LBLiquidityReceiver is
         uint256 shares,
         address recipient
     );
+    event FreeReserves(uint256 amount0, uint256 amount1, address recipient);
 
     error Unauthorized();
     error Initialized();
     error Locked();
-    error Notified();
     error PoolNotInitialized();
     error PoolNotFinalized();
     error InvalidRatio();
+    error InvalidAddress();
     error InvalidReserves();
-    error InvalidPool();
     error InvalidUniswapV3Fee();
     error InvalidMarginalV1Maintenance();
     error Amount0LessThanMin();
@@ -170,6 +176,10 @@ contract MarginalV1LBLiquidityReceiver is
     function checkParams(ReceiverParams memory params) public {
         if (params.treasuryRatio > 1e6 || params.uniswapV3Ratio > 1e6)
             revert InvalidRatio();
+        if (
+            params.treasuryAddress == address(0) ||
+            params.refundAddress == address(0)
+        ) revert InvalidAddress();
         fullTickRange(params.uniswapV3Fee);
         maximumLeverage(params.marginalV1Maintenance);
     }
@@ -230,8 +240,8 @@ contract MarginalV1LBLiquidityReceiver is
         bool _zeroForOne = (sqrtPriceInitializeX96 == sqrtPriceLowerX96);
         zeroForOne = _zeroForOne;
 
+        if (uninitialized == 1) revert Initialized();
         (uint256 _reserve0, uint256 _reserve1) = (reserve0, reserve1);
-        if (_reserve0 > 0 || _reserve1 > 0) revert Initialized();
 
         // calculate amount{0,1}Owed for reserves in case where need most tokens of hitting finalize price
         (, , uint128 liquidity, , , , , ) = IMarginalV1LBPool(pool).state();
@@ -249,7 +259,9 @@ contract MarginalV1LBLiquidityReceiver is
 
         reserve0 = _reserve0;
         reserve1 = _reserve1;
+
         unlocked = 2;
+        uninitialized = 1;
 
         emit Initialize(_reserve0, _reserve1);
     }
@@ -317,7 +329,6 @@ contract MarginalV1LBLiquidityReceiver is
         (, , , , , , , bool finalized) = IMarginalV1LBPool(pool).state();
         if (!finalized) revert PoolNotFinalized();
 
-        // only support tokens with standard ERC20 transfer
         (uint256 _reserve0, uint256 _reserve1) = (reserve0, reserve1);
         if (_reserve0 + amount0 > balance(token0)) revert Amount0LessThanMin();
         if (_reserve1 + amount1 > balance(token1)) revert Amount1LessThanMin();
@@ -334,6 +345,10 @@ contract MarginalV1LBLiquidityReceiver is
         reserve0 = _reserve0;
         reserve1 = _reserve1;
 
+        // mark timestamp at which notified
+        blockTimestampNotified = _blockTimestamp();
+
+        // transfer funds to treasury
         if (amount0Treasury > 0)
             pay(token0, address(this), params.treasuryAddress, amount0Treasury);
         if (amount1Treasury > 0)
@@ -407,13 +422,6 @@ contract MarginalV1LBLiquidityReceiver is
         uint256 amount0UniswapV3 = (_reserve0 * params.uniswapV3Ratio) / 1e6;
         uint256 amount1UniswapV3 = (_reserve1 * params.uniswapV3Ratio) / 1e6;
 
-        _reserve0 -= amount0UniswapV3;
-        _reserve1 -= amount1UniswapV3;
-
-        // update reserves
-        reserve0 = _reserve0;
-        reserve1 = _reserve1;
-
         // @dev lbp price used for amounts desired, capped by token acquired from lbp
         // initialize should transfer in worst case excess of amounts{0,1}Desired vs reserves{0,1} prior to minting
         (uint256 amount0Desired, uint256 amount1Desired) = getAmountsDesired(
@@ -425,7 +433,6 @@ contract MarginalV1LBLiquidityReceiver is
 
         // calculate tick upper/lower ticks for full tick range given uniswap v3 fee tier
         // @dev finite full tick range implies *less* physical reserves required to mint than calculated at initialize
-        // TODO: check finite full tick range math
         (int24 tickLower, int24 tickUpper) = fullTickRange(params.uniswapV3Fee);
 
         // add liquidity based on lbp price to avoid slippage issues
@@ -455,12 +462,21 @@ contract MarginalV1LBLiquidityReceiver is
                     amount0Desired: amount0Desired,
                     amount1Desired: amount1Desired,
                     amount0Min: 0,
-                    amount1Min: 0, // TODO: issue for slippage?
+                    amount1Min: 0,
                     recipient: address(this),
                     deadline: block.timestamp
                 })
             );
 
+        // @dev amount{0,1} <= amount{0,1}UniswapV3 for all sqrt(P)
+        _reserve0 -= amount0;
+        _reserve1 -= amount1;
+
+        // update reserves
+        reserve0 = _reserve0;
+        reserve1 = _reserve1;
+
+        // store univ3 pool info
         uniswapV3PoolInfo = PoolInfo({
             blockTimestamp: _blockTimestamp(),
             poolAddress: uniswapV3Pool,
@@ -501,10 +517,6 @@ contract MarginalV1LBLiquidityReceiver is
 
         if (marginalV1PoolInfo.blockTimestamp > 0) revert LiquidityAdded();
         marginalV1PoolInfo.blockTimestamp = _blockTimestamp(); // store here first to avoid re-entrancy issues
-
-        // set reserves to zero
-        reserve0 = 0;
-        reserve1 = 0;
 
         marginalV1Pool = getMarginalV1Pool(
             token0,
@@ -549,14 +561,13 @@ contract MarginalV1LBLiquidityReceiver is
             // @dev use uniswap v3 sqrt price to adjust desired amounts for burn via liquidity calculations
             (sqrtPriceX96, , , , , , ) = IUniswapV3Pool(uniswapV3Pool).slot0();
 
-            // TODO: fix logic for liquidity burned? use quoter?
             // liquidity (roughly) contributed to marginal v1 pool ignoring burn
             uint128 liquidityDesired = LiquidityAmounts.getLiquidityForAmounts(
                 sqrtPriceX96,
                 amount0Desired,
                 amount1Desired
             );
-            uint128 liquidityBurned = PoolConstants.MINIMUM_LIQUIDITY ** 2; // TODO: validation around minimum liquidity?
+            uint128 liquidityBurned = PoolConstants.MINIMUM_LIQUIDITY ** 2;
             // factor of 2 for extra significant buffer given swap increases liquidity due to fee
             liquidityDesired -= 2 * liquidityBurned;
             // back to amounts{0,1} with uniswap v3 sqrt price so near exact contribution (< original desired)
@@ -588,7 +599,7 @@ contract MarginalV1LBLiquidityReceiver is
                         amount0Desired: amount0Desired,
                         amount1Desired: amount1Desired,
                         amount0Min: 0,
-                        amount1Min: 0, // TODO: issue for slippage?
+                        amount1Min: 0,
                         deadline: block.timestamp
                     })
                 );
@@ -616,7 +627,7 @@ contract MarginalV1LBLiquidityReceiver is
                         amount0Desired: amount0Desired,
                         amount1Desired: amount1Desired,
                         amount0Min: 0,
-                        amount1Min: 0, // TODO: issue for slippage?
+                        amount1Min: 0,
                         deadline: block.timestamp
                     })
                 );
@@ -633,10 +644,15 @@ contract MarginalV1LBLiquidityReceiver is
         uint256 balance0 = balance(token0);
         uint256 balance1 = balance(token1);
         if (balance0 > 0)
-            pay(token0, address(this), params.treasuryAddress, balance0);
+            pay(token0, address(this), params.refundAddress, balance0);
         if (balance1 > 0)
-            pay(token1, address(this), params.treasuryAddress, balance1);
+            pay(token1, address(this), params.refundAddress, balance1);
 
+        // set reserves to zero
+        reserve0 = 0;
+        reserve1 = 0;
+
+        // store margv1 pool info
         marginalV1PoolInfo = PoolInfo({
             blockTimestamp: _blockTimestamp(),
             poolAddress: marginalV1Pool,
@@ -693,5 +709,28 @@ contract MarginalV1LBLiquidityReceiver is
         pay(info.poolAddress, address(this), recipient, shares);
 
         emit FreeMarginalV1(info.poolAddress, shares, recipient);
+    }
+
+    /// @inheritdoc IMarginalV1LBLiquidityReceiver
+    function freeReserves() external lock {
+        ReceiverParams memory params = receiverParams;
+        checkDeadline(blockTimestampNotified, params.lockDuration);
+
+        (uint256 _reserve0, uint256 _reserve1) = (reserve0, reserve1);
+        if (_reserve0 == 0 && _reserve1 == 0) revert InvalidReserves();
+
+        // refund any left over unused amounts from uniswap v3 and marginal v1 mints
+        uint256 balance0 = balance(token0);
+        uint256 balance1 = balance(token1);
+        if (balance0 > 0)
+            pay(token0, address(this), params.refundAddress, balance0);
+        if (balance1 > 0)
+            pay(token1, address(this), params.refundAddress, balance1);
+
+        // set reserves to zero
+        reserve0 = 0;
+        reserve1 = 0;
+
+        emit FreeReserves(balance0, balance1, params.refundAddress);
     }
 }

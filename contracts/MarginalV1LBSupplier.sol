@@ -3,7 +3,6 @@ pragma solidity =0.8.15;
 
 import {TickMath} from "@uniswap/v3-core/contracts/libraries/TickMath.sol";
 import {LiquidityAmounts} from "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
-import {PeripheryValidation} from "@uniswap/v3-periphery/contracts/base/PeripheryValidation.sol";
 import {Multicall} from "@uniswap/v3-periphery/contracts/base/Multicall.sol";
 
 import {IMarginalV1MintCallback} from "@marginal/v1-core/contracts/interfaces/callback/IMarginalV1MintCallback.sol";
@@ -14,7 +13,6 @@ import {RangeMath} from "./libraries/RangeMath.sol";
 import {PeripheryImmutableState} from "./base/PeripheryImmutableState.sol";
 import {PeripheryPayments} from "./base/PeripheryPayments.sol";
 
-import {IMarginalV1LBFinalizeCallback} from "./interfaces/callback/IMarginalV1LBFinalizeCallback.sol";
 import {IMarginalV1LBReceiverDeployer} from "./interfaces/receiver/IMarginalV1LBReceiverDeployer.sol";
 
 import {IMarginalV1LBReceiver} from "./interfaces/receiver/IMarginalV1LBReceiver.sol";
@@ -25,18 +23,10 @@ import {IMarginalV1LBSupplier} from "./interfaces/IMarginalV1LBSupplier.sol";
 contract MarginalV1LBSupplier is
     IMarginalV1LBSupplier,
     IMarginalV1MintCallback,
-    IMarginalV1LBFinalizeCallback,
     PeripheryImmutableState,
     PeripheryPayments,
-    PeripheryValidation,
     Multicall
 {
-    uint256 private constant DEFAULT_BALANCE_CACHED = type(uint256).max;
-
-    /// @dev Transient storage variables used for computing amounts received on finalize callback
-    uint256 private balance0Cached = DEFAULT_BALANCE_CACHED;
-    uint256 private balance1Cached = DEFAULT_BALANCE_CACHED;
-
     /// @inheritdoc IMarginalV1LBSupplier
     mapping(address => address) public receivers;
 
@@ -45,6 +35,7 @@ contract MarginalV1LBSupplier is
 
     error Unauthorized();
     error InvalidPool();
+    error InvalidFinalizer();
     error InvalidReceiver();
     error Amount0LessThanMin();
     error Amount1LessThanMin();
@@ -87,7 +78,6 @@ contract MarginalV1LBSupplier is
     )
         external
         payable
-        checkDeadline(params.deadline)
         returns (
             address pool,
             address receiver,
@@ -111,6 +101,7 @@ contract MarginalV1LBSupplier is
             address(this),
             block.timestamp // use current block timestamp
         );
+        if (params.finalizer == address(0)) revert InvalidFinalizer();
         finalizers[pool] = params.finalizer;
 
         // deploy the receiver after creating liquidity bootstrapping pool
@@ -161,6 +152,9 @@ contract MarginalV1LBSupplier is
 
         if (amount0 < params.amount0Min) revert Amount0LessThanMin();
         if (amount1 < params.amount1Min) revert Amount1LessThanMin();
+
+        // refund any excess ETH to sender at end of function to avoid re-entrancy with fallback
+        refundETH();
     }
 
     struct MintCallbackData {
@@ -188,7 +182,6 @@ contract MarginalV1LBSupplier is
         FinalizeParams calldata params
     )
         external
-        checkDeadline(params.deadline)
         returns (
             uint128 liquidityDelta,
             uint160 sqrtPriceX96,
@@ -215,10 +208,6 @@ contract MarginalV1LBSupplier is
         (, , , , , , , bool finalized) = IMarginalV1LBPool(pool).state();
         if (!finalized && msg.sender != finalizers[pool]) revert Unauthorized();
 
-        // cache balances for check on finalize callback on amounts received
-        balance0Cached = balance(poolKey.token0);
-        balance1Cached = balance(poolKey.token1);
-
         (
             liquidityDelta,
             sqrtPriceX96,
@@ -226,62 +215,10 @@ contract MarginalV1LBSupplier is
             amount1,
             fees0,
             fees1
-        ) = IMarginalV1LBPool(pool).finalize(
-            abi.encode(
-                FinalizeCallbackData({poolKey: poolKey, receiver: receiver})
-            )
-        );
-    }
+        ) = IMarginalV1LBPool(pool).finalize(receiver);
 
-    struct FinalizeCallbackData {
-        PoolAddress.PoolKey poolKey;
-        address receiver;
-    }
-
-    /// @inheritdoc IMarginalV1LBFinalizeCallback
-    function marginalV1LBFinalizeCallback(
-        uint256 amount0Transferred,
-        uint256 amount1Transferred,
-        bytes calldata data
-    ) external {
-        FinalizeCallbackData memory decoded = abi.decode(
-            data,
-            (FinalizeCallbackData)
-        );
-        CallbackValidation.verifyCallback(factory, decoded.poolKey);
-
-        // only support tokens with standard ERC20 transfer
-        if (
-            balance0Cached + amount0Transferred >
-            balance(decoded.poolKey.token0)
-        ) revert Amount0LessThanMin();
-        if (
-            balance1Cached + amount1Transferred >
-            balance(decoded.poolKey.token1)
-        ) revert Amount1LessThanMin();
-
-        if (amount0Transferred > 0)
-            pay(
-                decoded.poolKey.token0,
-                address(this),
-                decoded.receiver,
-                amount0Transferred
-            );
-        if (amount1Transferred > 0)
-            pay(
-                decoded.poolKey.token1,
-                address(this),
-                decoded.receiver,
-                amount1Transferred
-            );
-
-        IMarginalV1LBReceiver(decoded.receiver).notifyRewardAmounts(
-            amount0Transferred,
-            amount1Transferred
-        );
-
-        // reset balances cached
-        balance0Cached = DEFAULT_BALANCE_CACHED;
-        balance1Cached = DEFAULT_BALANCE_CACHED;
+        // notify receiver of forwarded funds
+        // @dev only supports tokens with standard ERC20 transfer
+        IMarginalV1LBReceiver(receiver).notifyRewardAmounts(amount0, amount1);
     }
 }

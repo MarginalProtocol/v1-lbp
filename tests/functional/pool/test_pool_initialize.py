@@ -49,8 +49,11 @@ def test_pool_initialize__updates_state(
         sqrt_price_lower_x96,
         sqrt_price_upper_x96,
     )
-    amount0 += 1
-    amount1 += 1  # mint does a rough round up when adding liquidity
+    if init_with_sqrt_price_lower_x96:
+        amount0 += 1
+    else:
+        amount1 += 1  # mint does a rough round up when adding liquidity
+
     token0.mint(sender.address, amount0, sender=sender)
     token1.mint(sender.address, amount1, sender=sender)
 
@@ -120,8 +123,11 @@ def test_pool_initialize__mints_lp_shares(
         sqrt_price_lower_x96,
         sqrt_price_upper_x96,
     )
-    amount0 += 1
-    amount1 += 1  # mint does a rough round up when adding liquidity
+    if init_with_sqrt_price_lower_x96:
+        amount0 += 1
+    else:
+        amount1 += 1  # mint does a rough round up when adding liquidity
+
     token0.mint(sender.address, amount0, sender=sender)
     token1.mint(sender.address, amount1, sender=sender)
 
@@ -170,9 +176,11 @@ def test_pool_initialize__transfers_funds(
         sqrt_price_lower_x96,
         sqrt_price_upper_x96,
     )
-    amount0 += 1
-    amount1 += 1  # mint does a rough round up when adding liquidity
-    # mint more to sender in case
+    if init_with_sqrt_price_lower_x96:
+        amount0 += 1
+    else:
+        amount1 += 1  # mint does a rough round up when adding liquidity
+
     token0.mint(sender.address, amount0, sender=sender)
     token1.mint(sender.address, amount1, sender=sender)
 
@@ -245,8 +253,11 @@ def test_pool_initialize__emits_initialize(
         sqrt_price_lower_x96,
         sqrt_price_upper_x96,
     )
-    amount0 += 1
-    amount1 += 1  # mint does a rough round up when adding liquidity
+    if init_with_sqrt_price_lower_x96:
+        amount0 += 1
+    else:
+        amount1 += 1  # mint does a rough round up when adding liquidity
+
     token0.mint(sender.address, amount0, sender=sender)
     token1.mint(sender.address, amount1, sender=sender)
 

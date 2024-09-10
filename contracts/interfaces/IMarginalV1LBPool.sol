@@ -88,8 +88,7 @@ interface IMarginalV1LBPool {
 
     /// @notice Finalizes the liquidity bootstrapping removing liquidity from the pool
     /// @dev Can be called if pool sqrt price has reached final tick or if supplier manually exists after minimum bootstrapping duration.
-    /// The `recipient_` of the pool receives a callback in the form of IMarginalV1LBFinalizeCallback#marginalV1LBFinalizeCallback.
-    /// @param data Any data to be passed through to the finalize callback
+    /// @param recipient The address to receive the output of the liquidity removed from the pool
     /// @return liquidityDelta The liquidity removed from the pool
     /// @return sqrtPriceX96 The final price of the pool as a sqrt(token1/token0) Q64.96 value
     /// @return amount0 The amount of token0 removed from pool reserves less protocol fees
@@ -97,7 +96,7 @@ interface IMarginalV1LBPool {
     /// @return fees0 The amount of token0 taken as protocol fees from pool reserves
     /// @return fees1 The amount of token1 taken as protocol fees from pool reserves
     function finalize(
-        bytes calldata data
+        address recipient
     )
         external
         returns (

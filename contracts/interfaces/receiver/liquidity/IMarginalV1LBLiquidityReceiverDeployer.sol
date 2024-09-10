@@ -8,6 +8,14 @@ import {IMarginalV1LBReceiverDeployer} from "../IMarginalV1LBReceiverDeployer.so
 interface IMarginalV1LBLiquidityReceiverDeployer is
     IMarginalV1LBReceiverDeployer
 {
+    /// @notice Returns the address of the Marginal v1 liquidity bootstrapping pool supplier
+    /// @return The address of the supplier
+    function supplier() external view returns (address);
+
+    /// @notice Returns the address of the Marginal v1 liquidity bootstrapping pool factory
+    /// @return The address of the factory
+    function factory() external view returns (address);
+
     /// @notice Returns the address of the Uniswap v3 nonfungible position manager
     /// @return The address of the Uniswap v3 NFT manager
     function uniswapV3NonfungiblePositionManager()

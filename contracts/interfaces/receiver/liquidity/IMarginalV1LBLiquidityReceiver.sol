@@ -22,6 +22,10 @@ interface IMarginalV1LBLiquidityReceiver is IMarginalV1LBReceiver {
     /// @return The amount of token1 left
     function reserve1() external view returns (uint256);
 
+    /// @notice Returns the block timestamp at which receiver was notified
+    /// @return The block timestamp when receiver was notified
+    function blockTimestampNotified() external view returns (uint96);
+
     /// @notice Returns the receiver params set on deployment to use when creating Uniswap v3 and Marginal v1 pools
     /// @return treasuryAddress The address to send treasury ratio funds to
     /// @return treasuryRatio The fraction of lbp funds to send to treasury in units of hundredths of 1 bip
@@ -30,6 +34,7 @@ interface IMarginalV1LBLiquidityReceiver is IMarginalV1LBReceiver {
     /// @return marginalV1Maintenance The minimum maintenance requirement of Marginal v1 pool to add liquidity to
     /// @return lockOwner The address that can unlock liquidity after lock passes from this contract
     /// @return lockDuration The number of seconds after which can unlock liquidity receipt tokens from this contract
+    /// @return refundAddress The address to refund unspent funds to
     function receiverParams()
         external
         view
@@ -40,7 +45,8 @@ interface IMarginalV1LBLiquidityReceiver is IMarginalV1LBReceiver {
             uint24 uniswapV3Fee,
             uint24 marginalV1Maintenance,
             address lockOwner,
-            uint96 lockDuration
+            uint96 lockDuration,
+            address refundAddress
         );
 
     /// @notice Returns the pool information for the created and initialized Uniswap v3 pool
@@ -116,4 +122,8 @@ interface IMarginalV1LBLiquidityReceiver is IMarginalV1LBReceiver {
     /// @dev Reverts if `msg.sender` is not lock owner or if not enough time has passed since Marginal v1 pool liquidity minted
     /// @param recipient The address of the recipient of the unlocked Marginal v1 liquidity shares
     function freeMarginalV1(address recipient) external;
+
+    /// @notice Frees reserve balances left in receiver if enough time has passed
+    /// @dev Reverts if `msg.sender` is not lock owner or if not enough time has passed since receiver notified
+    function freeReserves() external;
 }

@@ -28,9 +28,12 @@ def supplier(project, accounts, factory, mock_margv1_factory, WETH9):
 
 
 @pytest.fixture(scope="module")
-def liquidity_receiver_deployer(project, accounts, mock_margv1_factory, WETH9):
+def liquidity_receiver_deployer(
+    project, accounts, supplier, mock_margv1_factory, WETH9
+):
     # TODO: replace zero addresses with mocks
     return project.MarginalV1LBLiquidityReceiverDeployer.deploy(
+        supplier.address,  # margv1 lbp supplier
         ZERO_ADDRESS,  # univ3 manager
         mock_margv1_factory.address,
         ZERO_ADDRESS,  # margv1 initializer
@@ -87,7 +90,7 @@ def finalizer(accounts):
 
 
 @pytest.fixture(scope="module")
-def receiver_params(finalizer):
+def receiver_params(finalizer, sender):
     return (
         finalizer.address,  # treasuryAddress
         int(0.1e6),  # treasuryRatio: 10% to treasury
@@ -98,6 +101,7 @@ def receiver_params(finalizer):
         250000,  # marginalV1Maintenance
         finalizer.address,  # lockOwner
         int(86400 * 30),  # lockDuration: 30 days
+        sender.address,  # refundAddress
     )
 
 
@@ -127,10 +131,18 @@ def liquidity_receiver_and_pool(
             else (spot_reserve1 * 100) // 10000
         )
         receiver_data = encode(
-            ["address", "uint24", "uint24", "uint24", "uint24", "address", "uint96"],
+            [
+                "address",
+                "uint24",
+                "uint24",
+                "uint24",
+                "uint24",
+                "address",
+                "uint96",
+                "address",
+            ],
             receiver_params,
         )
-        deadline = chain.pending_timestamp
         params = (
             token0.address,
             token1.address,
@@ -143,7 +155,6 @@ def liquidity_receiver_and_pool(
             liquidity_receiver_deployer.address,
             receiver_data,
             finalizer.address,
-            deadline,
         )
         tx = supplier.createAndInitializePool(params, sender=sender)
 

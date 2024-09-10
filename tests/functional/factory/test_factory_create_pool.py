@@ -148,8 +148,8 @@ def test_create_pool__emits_pool_created(
     assert event.token0 == rando_token_a_address
     assert event.token1 == rando_token_b_address
     assert event.tickLower == tick_lower
-    assert event.tickUpper == tick_upper
-    assert event.supplier == supplier
+    assert int(event.tickUpper, 0) == tick_upper
+    assert event.supplier.lower() == supplier.lower()
     assert event.blockTimestampInitialize == timestamp_initial
     assert (
         event.pool.lower()

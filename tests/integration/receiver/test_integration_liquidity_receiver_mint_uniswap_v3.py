@@ -69,11 +69,20 @@ def test_integration_liquidity_receiver_mint_uniswap_v3__updates_reserves_when_p
     amount0_univ3 = (reserve0 * liquidity_receiver_params.uniswapV3Ratio) // int(1e6)
     amount1_univ3 = (reserve1 * liquidity_receiver_params.uniswapV3Ratio) // int(1e6)
 
-    reserve0 -= amount0_univ3
-    reserve1 -= amount1_univ3
-
     # mint to univ3
-    liquidity_receiver.mintUniswapV3(sender=alice)
+    tx = liquidity_receiver.mintUniswapV3(sender=alice)
+    events = tx.decode_logs(univ3_manager.IncreaseLiquidity)
+    assert len(events) == 1
+
+    event = events[0]
+    (amount0, amount1) = (event.amount0, event.amount1)
+
+    assert amount0 <= amount0_univ3
+    assert amount1 <= amount1_univ3
+
+    reserve0 -= amount0
+    reserve1 -= amount1
+
     assert liquidity_receiver.reserve0() == reserve0
     assert liquidity_receiver.reserve1() == reserve1
 
