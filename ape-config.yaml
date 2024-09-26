@@ -41,10 +41,10 @@ dependencies:
     ref: 0.8
   - name: marginal-v1-core
     github: MarginalProtocol/v1-core
-    ref: v1.0.1
+    ref: network/base
   - name: marginal-v1-periphery
     github: MarginalProtocol/v1-periphery
-    ref: v1.0.1
+    ref: network/base
 
 solidity:
   via_ir: true
@@ -52,5 +52,5 @@ solidity:
     - "@openzeppelin/contracts=openzeppelin/v4.8.3"
     - "@uniswap/v3-core/contracts=uniswap-v3-core/v0.8"
     - "@uniswap/v3-periphery/contracts=uniswap-v3-periphery/v0.8"
-    - "@marginal/v1-core/contracts=marginal-v1-core/v1.0.1"
-    - "@marginal/v1-periphery/contracts=marginal-v1-periphery/v1.0.1"
+    - "@marginal/v1-core/contracts=marginal-v1-core/network/base"
+    - "@marginal/v1-periphery/contracts=marginal-v1-periphery/network/base"
