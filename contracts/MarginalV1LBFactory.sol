@@ -47,6 +47,7 @@ contract MarginalV1LBFactory is IMarginalV1LBFactory {
     );
 
     error Unauthorized();
+    error InvalidTokens();
     error PoolActive();
 
     constructor(address _marginalV1LBDeployer) {
@@ -65,6 +66,7 @@ contract MarginalV1LBFactory is IMarginalV1LBFactory {
         address supplier,
         uint256 blockTimestampInitialize
     ) external returns (address pool) {
+        if (tokenA == tokenB) revert InvalidTokens();
         (address token0, address token1) = tokenA < tokenB
             ? (tokenA, tokenB)
             : (tokenB, tokenA);

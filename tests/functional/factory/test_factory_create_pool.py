@@ -164,6 +164,31 @@ def test_create_pool__emits_pool_created(
     )
 
 
+def test_create_pool__reverts_when_invalid_tokens(
+    factory,
+    alice,
+    rando_token_a_address,
+    ticks,
+    callee,
+    chain,
+):
+    (tick_lower, tick_upper) = ticks
+    timestamp_initial = chain.pending_timestamp + 3600
+    supplier = callee.address
+
+    # should fail when try with same address
+    with reverts(factory.InvalidTokens):
+        factory.createPool(
+            rando_token_a_address,
+            rando_token_a_address,
+            tick_lower,
+            tick_upper,
+            supplier,
+            timestamp_initial,
+            sender=alice,
+        )
+
+
 def test_create_pool__reverts_when_pool_active(
     factory,
     alice,
