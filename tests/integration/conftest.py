@@ -71,6 +71,18 @@ def margv1_supplier(
 
 
 @pytest.fixture(scope="module")
+def margv1_quoter(
+    assert_mainnet_fork, project, accounts, factory, margv1_factory, WETH9
+):
+    return project.V1LBQuoter.deploy(
+        factory.address,
+        margv1_factory.address,
+        WETH9.address,
+        sender=accounts[0],
+    )
+
+
+@pytest.fixture(scope="module")
 def margv1_ticks(
     assert_mainnet_fork,
     univ3_pool,

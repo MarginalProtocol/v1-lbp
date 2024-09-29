@@ -2,6 +2,7 @@
 pragma solidity >=0.7.5;
 
 import {IMarginalV1LBSupplier} from "./IMarginalV1LBSupplier.sol";
+import {IV1LBRouter} from "./IV1LBRouter.sol";
 
 /// @title The interface of the quoter for Marginal v1 liquidity bootstrapping pools
 /// @notice Quotes the result of supplying and swaps on Marginal v1 liquidity bootstrapping pools
@@ -55,5 +56,47 @@ interface IV1LBQuoter {
             uint160 sqrtPriceX96,
             uint160 sqrtPriceLowerX96,
             uint160 sqrtPriceUpperX96
+        );
+
+    /// @notice Quotes the amountOut result of V1LBRouter::exactInputSingle
+    /// @param params Param inputs to V1LBRouter::exactInputSingle
+    /// @dev Reverts if exactInputSingle would revert
+    /// @return amountIn Amount of token sent to pool for swap
+    /// @return amountOut Amount of token received from pool after swap
+    /// @return liquidityAfter Pool liquidity after swap
+    /// @return sqrtPriceX96After Pool sqrt price after swap
+    /// @return finalizedAfter Whether the pool is finalized after swap
+    function quoteExactInputSingle(
+        IV1LBRouter.ExactInputSingleParams memory params
+    )
+        external
+        view
+        returns (
+            uint256 amountIn,
+            uint256 amountOut,
+            uint128 liquidityAfter,
+            uint160 sqrtPriceX96After,
+            bool finalizedAfter
+        );
+
+    /// @notice Quotes the amountIn result of V1LBRouter::exactOutputSingle
+    /// @param params Param inputs to V1LBRouter::exactOutputSingle
+    /// @dev Reverts if exactOutputSingle would revert
+    /// @return amountIn Amount of token sent to pool for swap
+    /// @return amountOut Amount of token received from pool after swap
+    /// @return liquidityAfter Pool liquidity after swap
+    /// @return sqrtPriceX96After Pool sqrt price after swap
+    /// @return finalizedAfter Whether the pool is finalized after swap
+    function quoteExactOutputSingle(
+        IV1LBRouter.ExactOutputSingleParams calldata params
+    )
+        external
+        view
+        returns (
+            uint256 amountIn,
+            uint256 amountOut,
+            uint128 liquidityAfter,
+            uint160 sqrtPriceX96After,
+            bool finalizedAfter
         );
 }
