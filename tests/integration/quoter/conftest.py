@@ -35,6 +35,27 @@ def margv1_liquidity_receiver_deployer(
 
 
 @pytest.fixture(scope="module")
+def margv1_receiver_quoter(assert_mainnet_fork, project, accounts):
+    return project.V1LBLiquidityReceiverQuoter.deploy(sender=accounts[0])
+
+
+@pytest.fixture(scope="module")
+def margv1_quoter_initialized(
+    assert_mainnet_fork,
+    margv1_quoter,
+    margv1_receiver_quoter,
+    margv1_liquidity_receiver_deployer,
+    admin,
+):
+    margv1_quoter.setReceiverQuoter(
+        margv1_liquidity_receiver_deployer.address,
+        margv1_receiver_quoter.address,
+        sender=admin,
+    )
+    return margv1_quoter
+
+
+@pytest.fixture(scope="module")
 def margv1_receiver_params(finalizer, treasury, sender):
     return (
         treasury.address,  # treasuryAddress
@@ -48,6 +69,3 @@ def margv1_receiver_params(finalizer, treasury, sender):
         int(86400 * 30),  # lockDuration: 30 days
         sender.address,  # refundAddress
     )
-
-
-# TODO: receiver quoter
