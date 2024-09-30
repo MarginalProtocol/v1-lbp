@@ -83,6 +83,18 @@ def margv1_quoter(
 
 
 @pytest.fixture(scope="module")
+def margv1lb_router(
+    assert_mainnet_fork, project, accounts, factory, margv1_factory, WETH9
+):
+    return project.V1LBRouter.deploy(
+        factory.address,
+        margv1_factory.address,
+        WETH9.address,
+        sender=accounts[0],
+    )
+
+
+@pytest.fixture(scope="module")
 def margv1_ticks(
     assert_mainnet_fork,
     univ3_pool,
@@ -109,6 +121,7 @@ def margv1_token0(
     callee,
     margv1_supplier,
     margv1_initializer,
+    margv1lb_router,
     whale,
 ):
     token0 = USDC
@@ -116,6 +129,7 @@ def margv1_token0(
     token0.approve(callee.address, 2**256 - 1, sender=sender)
     token0.approve(margv1_supplier.address, 2**256 - 1, sender=sender)
     token0.approve(margv1_initializer.address, 2**256 - 1, sender=sender)
+    token0.approve(margv1lb_router.address, 2**256 - 1, sender=sender)
     token0.transfer(sender.address, amount0, sender=whale)
     return token0
 
@@ -130,6 +144,7 @@ def margv1_token1(
     callee,
     margv1_supplier,
     margv1_initializer,
+    margv1lb_router,
     whale,
 ):
     token1 = WETH9
@@ -137,6 +152,7 @@ def margv1_token1(
     token1.approve(callee.address, 2**256 - 1, sender=sender)
     token1.approve(margv1_supplier.address, 2**256 - 1, sender=sender)
     token1.approve(margv1_initializer.address, 2**256 - 1, sender=sender)
+    token1.approve(margv1lb_router.address, 2**256 - 1, sender=sender)
     token1.transfer(sender.address, amount1, sender=whale)
     return token1
 
