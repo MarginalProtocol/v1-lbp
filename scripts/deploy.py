@@ -73,6 +73,7 @@ def main():
         click.echo(f"Deployed Marginal v1lb supplier to {supplier.address}")
 
     # deploy marginal v1lb liquidity receiver deployer
+    liquidity_receiver_deployer = None
     if click.confirm("Deploy Marginal v1lb liquidity receiver deployer?"):
         click.echo("Deploying Marginal v1lb liquidity receiver deployer ...")
         supplier_address = (
@@ -100,3 +101,54 @@ def main():
         click.echo(
             f"Deployed Marginal v1lb liquidity receiver deployer to {liquidity_receiver_deployer.address}"
         )
+
+    # deploy marginal v1lb liquidity receiver quoter
+    liquidity_receiver_quoter = None
+    if click.confirm("Deploy Marginal v1lb liquidity receiver quoter?"):
+        click.echo("Deploying Marginal v1lb liquidity receiver quoter ...")
+        liquidity_receiver_quoter = project.V1LBLiquidityReceiverQuoter.deploy(
+            sender=deployer, publish=publish
+        )
+        click.echo(
+            f"Deployed Marginal v1lb liquidity receiver quoter to {liquidity_receiver_quoter.address}"
+        )
+
+    # deploy marginal v1lb quoter
+    if click.confirm("Deploy Marginal v1lb quoter?"):
+        click.echo("Deploying Marginal v1lb quoter ...")
+        quoter = project.V1LBQuoter.deploy(
+            factory.address,
+            margv1_factory_address,
+            weth9_address,
+            sender=deployer,
+            publish=publish,
+        )
+        click.echo(f"Deployed Marginal v1lb quoter to {quoter.address}")
+
+        click.echo("Setting liquidity receiver quoter for deployer ...")
+        liquidity_receiver_deployer_address = (
+            liquidity_receiver_deployer.address
+            if liquidity_receiver_deployer is not None
+            else click.prompt(
+                "Marginal v1lb liquidity receiver deployer address", type=str
+            )
+        )
+        liquidity_receiver_quoter_address = (
+            liquidity_receiver_quoter.address
+            if liquidity_receiver_quoter is not None
+            else click.prompt(
+                "Marginal v1lb liquidity receiver quoter address", type=str
+            )
+        )
+        quoter.setReceiverQuoter(
+            liquidity_receiver_deployer_address,
+            liquidity_receiver_quoter_address,
+            sender=deployer,
+        )
+
+        # change owner on quoter if user wants
+        if click.confirm("Change Marginal v1lb quoter owner?"):
+            quoter_owner_address = click.prompt(
+                "Marginal v1lb quoter owner address", type=str
+            )
+            quoter.setOwner(quoter_owner_address, sender=deployer)
