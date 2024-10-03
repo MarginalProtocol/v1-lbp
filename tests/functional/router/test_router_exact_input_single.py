@@ -490,6 +490,276 @@ def test_router_exact_input_single__when_sqrt_price_x96_next_greater_than_sqrt_p
     )
 
 
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
+def test_router_exact_input_single__deposits_WETH9(
+    pool_initialized_with_WETH9,
+    router,
+    sender,
+    alice,
+    chain,
+    WETH9,
+    token0_with_WETH9,
+    token1_with_WETH9,
+    sqrt_price_math_lib,
+    liquidity_math_lib,
+    swap_math_lib,
+    init_with_sqrt_price_lower_x96,
+):
+    pool_with_WETH9_initialized_with_liquidity = pool_initialized_with_WETH9(
+        init_with_sqrt_price_lower_x96
+    )
+    assert pool_with_WETH9_initialized_with_liquidity.sqrtPriceInitializeX96() > 0
+    assert pool_with_WETH9_initialized_with_liquidity.totalSupply() > 0
+
+    zero_for_one = token0_with_WETH9.address == WETH9.address
+    state = pool_with_WETH9_initialized_with_liquidity.state()
+    assert state.sqrtPriceX96 > 0
+
+    tick_lower = pool_with_WETH9_initialized_with_liquidity.tickLower()
+    tick_upper = pool_with_WETH9_initialized_with_liquidity.tickUpper()
+    supplier_address = pool_with_WETH9_initialized_with_liquidity.supplier()
+    timestamp_initialize = (
+        pool_with_WETH9_initialized_with_liquidity.blockTimestampInitialize()
+    )
+
+    # set WETH9 allowance to zero to ensure all payment in ETH
+    WETH9.approve(router.address, 0, sender=sender)
+
+    # WETH9 in to test ETH deposits
+    token_in = WETH9
+    token_out = (
+        token0_with_WETH9
+        if token0_with_WETH9.address != WETH9.address
+        else token1_with_WETH9
+    )
+    zero_for_one = token_in.address == token0_with_WETH9.address
+
+    deadline = chain.pending_timestamp + 3600
+    amount_out_min = 0
+    sqrt_price_limit_x96 = 0
+
+    sqrt_price_lower_x96 = (
+        pool_with_WETH9_initialized_with_liquidity.sqrtPriceLowerX96()
+    )
+    sqrt_price_upper_x96 = (
+        pool_with_WETH9_initialized_with_liquidity.sqrtPriceUpperX96()
+    )
+    (reserve0, reserve1) = calc_range_amounts_from_liquidity_sqrt_price_x96(
+        state.liquidity, state.sqrtPriceX96, sqrt_price_lower_x96, sqrt_price_upper_x96
+    )
+    amount_in = 1 * reserve0 // 100 if zero_for_one else 1 * reserve1 // 100
+
+    # cache balances before swap
+    balancei_sender = token_in.balanceOf(sender.address)
+    balanceo_sender = token_out.balanceOf(sender.address)
+    balancee_sender = sender.balance
+
+    balancei_pool = token_in.balanceOf(
+        pool_with_WETH9_initialized_with_liquidity.address
+    )
+    balanceo_pool = token_out.balanceOf(
+        pool_with_WETH9_initialized_with_liquidity.address
+    )
+
+    balancei_alice = token_in.balanceOf(alice.address)
+    balanceo_alice = token_out.balanceOf(alice.address)
+
+    balancee_WETH9 = WETH9.balance
+
+    # calculate amount in
+    sqrt_price_x96_next = sqrt_price_math_lib.sqrtPriceX96NextSwap(
+        state.liquidity, state.sqrtPriceX96, zero_for_one, amount_in
+    )
+    assert sqrt_price_x96_next < sqrt_price_upper_x96
+    assert sqrt_price_x96_next > sqrt_price_lower_x96
+
+    (amount0, amount1) = swap_math_lib.swapAmounts(
+        state.liquidity,
+        state.sqrtPriceX96,
+        sqrt_price_x96_next,
+    )
+    amount_out = -amount1 if zero_for_one else -amount0
+
+    params = (
+        token_in.address,
+        token_out.address,
+        tick_lower,
+        tick_upper,
+        supplier_address,
+        timestamp_initialize,
+        alice.address,  # recipient
+        deadline,
+        amount_in,
+        amount_out_min,
+        sqrt_price_limit_x96,
+    )
+    value = (amount_in * 101) // 100  # send excess ETH to test router refunds
+    tx = router.exactInputSingle(params, sender=sender, value=value)
+
+    balancei_sender_after = balancei_sender  # since send in native ETH instead of WETH
+    balanceo_sender_after = balanceo_sender  # since send out to alice
+
+    assert token_in.balanceOf(sender.address) == balancei_sender_after
+    assert token_out.balanceOf(sender.address) == balanceo_sender_after
+    assert (
+        sender.balance == balancee_sender - amount_in - tx.gas_used * tx.gas_price
+    )  # router refunds excess ETH
+
+    balancei_alice_after = balancei_alice
+    balanceo_alice_after = balanceo_alice + amount_out
+
+    assert token_in.balanceOf(alice.address) == balancei_alice_after
+    assert token_out.balanceOf(alice.address) == balanceo_alice_after
+
+    balancei_pool_after = balancei_pool + amount_in
+    balanceo_pool_after = balanceo_pool - amount_out
+
+    assert (
+        token_in.balanceOf(pool_with_WETH9_initialized_with_liquidity.address)
+        == balancei_pool_after
+    )
+    assert (
+        token_out.balanceOf(pool_with_WETH9_initialized_with_liquidity.address)
+        == balanceo_pool_after
+    )
+    assert router.balance == 0
+    assert WETH9.balance == balancee_WETH9 + amount_in
+
+
+@pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
+def test_router_exact_input_single__deposits_WETH9_when_sqrt_price_x96_next_exceeds_tick_range(
+    pool_initialized_with_WETH9,
+    router,
+    sender,
+    alice,
+    chain,
+    WETH9,
+    token0_with_WETH9,
+    token1_with_WETH9,
+    sqrt_price_math_lib,
+    liquidity_math_lib,
+    swap_math_lib,
+    init_with_sqrt_price_lower_x96,
+):
+    pool_with_WETH9_initialized_with_liquidity = pool_initialized_with_WETH9(
+        init_with_sqrt_price_lower_x96
+    )
+    assert pool_with_WETH9_initialized_with_liquidity.sqrtPriceInitializeX96() > 0
+    assert pool_with_WETH9_initialized_with_liquidity.totalSupply() > 0
+
+    zero_for_one = token0_with_WETH9.address == WETH9.address
+    state = pool_with_WETH9_initialized_with_liquidity.state()
+    assert state.sqrtPriceX96 > 0
+
+    tick_lower = pool_with_WETH9_initialized_with_liquidity.tickLower()
+    tick_upper = pool_with_WETH9_initialized_with_liquidity.tickUpper()
+    supplier_address = pool_with_WETH9_initialized_with_liquidity.supplier()
+    timestamp_initialize = (
+        pool_with_WETH9_initialized_with_liquidity.blockTimestampInitialize()
+    )
+
+    # set WETH9 allowance to zero to ensure all payment in ETH
+    WETH9.approve(router.address, 0, sender=sender)
+
+    # WETH9 in to test ETH deposits
+    token_in = WETH9
+    token_out = (
+        token0_with_WETH9
+        if token0_with_WETH9.address != WETH9.address
+        else token1_with_WETH9
+    )
+    zero_for_one = token_in.address == token0_with_WETH9.address
+
+    deadline = chain.pending_timestamp + 3600
+    amount_out_min = 0
+    sqrt_price_limit_x96 = 0
+
+    sqrt_price_lower_x96 = (
+        pool_with_WETH9_initialized_with_liquidity.sqrtPriceLowerX96()
+    )
+    sqrt_price_upper_x96 = (
+        pool_with_WETH9_initialized_with_liquidity.sqrtPriceUpperX96()
+    )
+
+    # cache balances before swap
+    balancei_sender = token_in.balanceOf(sender.address)
+    balanceo_sender = token_out.balanceOf(sender.address)
+    balancee_sender = sender.balance
+
+    balancei_pool = token_in.balanceOf(
+        pool_with_WETH9_initialized_with_liquidity.address
+    )
+    balanceo_pool = token_out.balanceOf(
+        pool_with_WETH9_initialized_with_liquidity.address
+    )
+
+    balancei_alice = token_in.balanceOf(alice.address)
+    balanceo_alice = token_out.balanceOf(alice.address)
+
+    balancee_WETH9 = WETH9.balance
+
+    # calculate amount in
+    sqrt_price_x96_next = sqrt_price_lower_x96 if zero_for_one else sqrt_price_upper_x96
+    (amount0, amount1) = swap_math_lib.swapAmounts(
+        state.liquidity,
+        state.sqrtPriceX96,
+        sqrt_price_x96_next,
+    )
+    amount_out = -amount1 if zero_for_one else -amount0
+    amount_in = amount0 if zero_for_one else amount1
+    amount_in_params = int(
+        1.01 * amount_in
+    )  # extra buffer on amount in so go past tick limit
+
+    params = (
+        token_in.address,
+        token_out.address,
+        tick_lower,
+        tick_upper,
+        supplier_address,
+        timestamp_initialize,
+        alice.address,  # recipient
+        deadline,
+        amount_in_params,
+        amount_out_min,
+        sqrt_price_limit_x96,
+    )
+    value = amount_in_params  # excess ETH sent since should be clamped
+    tx = router.exactInputSingle(params, sender=sender, value=value)
+
+    balancei_sender_after = balancei_sender  # since send in native ETH instead of WETH
+    balanceo_sender_after = balanceo_sender  # since send out to alice
+
+    assert token_in.balanceOf(sender.address) == balancei_sender_after
+    assert token_out.balanceOf(sender.address) == balanceo_sender_after
+    assert (
+        sender.balance == balancee_sender - amount_in - tx.gas_used * tx.gas_price
+    )  # router refunds excess ETH
+
+    balancei_alice_after = balancei_alice
+    balanceo_alice_after = balanceo_alice + amount_out
+
+    assert token_in.balanceOf(alice.address) == balancei_alice_after
+    assert token_out.balanceOf(alice.address) == balanceo_alice_after
+
+    balancei_pool_after = balancei_pool + amount_in
+    balanceo_pool_after = balanceo_pool - amount_out
+
+    assert (
+        token_in.balanceOf(pool_with_WETH9_initialized_with_liquidity.address)
+        == balancei_pool_after
+    )
+    assert (
+        token_out.balanceOf(pool_with_WETH9_initialized_with_liquidity.address)
+        == balanceo_pool_after
+    )
+    assert router.balance == 0
+    assert WETH9.balance == balancee_WETH9 + amount_in
+
+    state = pool_with_WETH9_initialized_with_liquidity.state()
+    assert state.sqrtPriceX96 == sqrt_price_x96_next
+
+
 @pytest.mark.parametrize("zero_for_one", [True, False])
 @pytest.mark.parametrize("init_with_sqrt_price_lower_x96", [True, False])
 def test_router_exact_input_single__reverts_when_past_deadline(

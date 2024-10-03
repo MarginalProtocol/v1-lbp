@@ -22,6 +22,7 @@ import {IMarginalV1LBPool} from "./interfaces/IMarginalV1LBPool.sol";
 
 import {PeripheryImmutableState} from "./base/PeripheryImmutableState.sol";
 import {PeripheryPayments} from "./base/PeripheryPayments.sol";
+import {PeripheryWETH9} from "./base/PeripheryWETH9.sol";
 
 import {CallbackValidation} from "./libraries/CallbackValidation.sol";
 import {PoolAddress} from "./libraries/PoolAddress.sol";
@@ -34,6 +35,7 @@ contract V1LBRouter is
     IMarginalV1SwapCallback,
     PeripheryImmutableState,
     PeripheryPayments,
+    PeripheryWETH9,
     PeripheryValidation,
     Multicall,
     SelfPermit
@@ -127,8 +129,11 @@ contract V1LBRouter is
                 : sqrtPriceLimitX96,
             abi.encode(data)
         );
+        amountOut = uint256(-(zeroForOne ? amount1 : amount0));
 
-        return uint256(-(zeroForOne ? amount1 : amount0));
+        // refund any unspent ETH sent in for swap given token exact input specified
+        // @dev Possible since clamping of swap when hit range tick limits does not revert on exact input
+        refundETH();
     }
 
     /// @inheritdoc IV1LBRouter
